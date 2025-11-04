@@ -35,7 +35,7 @@ export default function MainMenu({ onSelect }) {
                 onMouseEnter={() => setSelectedIndex(i)}
                 onClick={() => onSelect(it)}
               >
-                {it}
+                <span className="btn-text">{it}</span>
               </button>
             </li>
           ))}
