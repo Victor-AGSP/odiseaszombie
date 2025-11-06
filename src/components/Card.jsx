@@ -3,9 +3,12 @@ import './Card.css'
 
 // Card visual focused on numbers (riesgo / conflicto). No nombres visibles por petición.
 export default function Card({ type = 'personaje', risk = 0, conflict = 0, allied = false, errant = false, onClick, rot = 0 }) {
+  const typeClass = type ? String(type).toLowerCase() : ''
+  const badge = type === 'personaje' ? 'P' : type === 'evento' ? 'E' : type === 'talento' ? 'T' : type === 'iniciativa' ? 'I' : 'C'
+
   return (
     <div
-      className={`card-root ${allied ? 'allied' : ''} ${errant ? 'errant' : ''}`}
+      className={`card-root ${typeClass} ${allied ? 'allied' : ''} ${errant ? 'errant' : ''}`}
       onClick={onClick}
       style={{ transform: `rotate(${rot}deg)` }}
       role="button"
@@ -13,7 +16,7 @@ export default function Card({ type = 'personaje', risk = 0, conflict = 0, allie
     >
       <div className="card-inner">
         <div className="card-face card-front">
-          <div className="card-badge">{type === 'personaje' ? 'P' : type === 'evento' ? 'E' : 'T'}</div>
+          <div className="card-badge">{badge}</div>
 
           <div className="card-risk">{risk}</div>
 

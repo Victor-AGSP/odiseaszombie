@@ -26,6 +26,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: 180px; /* leave room for the enlarged team-bar so board content won't be overlapped */
 }
 
 /* Header */
@@ -95,11 +96,12 @@
 .deck-hud .deck-controls { display:flex; flex-direction:column; gap:6px; align-items:flex-start }
 
 /* Table (cards on the board) */
-.table-area { background:rgba(255,255,255,0.01); border-radius:8px; padding:1rem; min-height:160px; display:flex; align-items:center; justify-content:center }
+.table-area { background:rgba(255,255,255,0.01); border-radius:8px; padding:1.5rem 1.5rem 1rem 1.5rem; min-height:160px; display:flex; align-items:center; justify-content:center }
 .table-placeholder { color:rgba(255,255,255,0.6) }
-.table-cards { position:relative; display:flex; align-items:flex-start; justify-content:flex-start; gap:0.6rem; flex-wrap:wrap }
-.table-slot { width: 120px; height: 160px; display:inline-block; position:relative; will-change:transform; margin:8px }
-.table-slot .card-root { transform-origin: center center }
+.table-cards { position:relative; display:flex; align-items:flex-start; justify-content:flex-start; gap:1.2rem; flex-wrap:wrap }
+.table-slot { width: 104px; height: 140px; display:inline-block; position:relative; will-change:transform; margin:10px }
+.table-slot { perspective: 300px; -webkit-perspective: 300px; }
+.table-slot .card-root { transform-origin: center center; width:104px; height:140px }
 .table-pan { overflow: hidden; width: 100%; display:flex; flex-direction:column; justify-content:flex-start; align-items:stretch; cursor: grab; flex: 1 1 auto; min-height: 0 }
 .table-pan.grabbing { cursor: grabbing }
 .table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; align-items:stretch }
@@ -109,7 +111,7 @@
 
 /* Hand area (player hand) */
 .hand-label { color: rgba(255,255,255,0.85); font-weight:700; margin-left:0.4rem }
-.hand-area { display:flex; gap:0.6rem; align-items:flex-end; padding:0.5rem 0; perspective: 1200px }
+.hand-area { display:flex; gap:0.6rem; align-items:flex-end; padding:0.5rem 0 }
 .hand-slot { display:inline-block; transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms ease; will-change: transform; transform-origin: center bottom; transform-style: preserve-3d }
 .hand-slot + .hand-slot { margin-left: -56px }
 .hand-slot .card-root { transform-origin: center center; backface-visibility: hidden }
@@ -119,19 +121,33 @@
 .team-bar {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 0.5rem 0.75rem; border-radius: 10px;
-  background: linear-gradient(180deg, rgba(8,10,12,0.6), rgba(6,8,10,0.5));
-  border: 1px solid rgba(255,255,255,0.035); box-shadow: 0 10px 30px rgba(2,6,12,0.6);
-  width: min(92%, 920px); z-index: 2400; pointer-events: auto;
+  padding: 0.75rem 1rem; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(8,10,12,0.72), rgba(6,8,10,0.55));
+  border: 1px solid rgba(255,255,255,0.04); box-shadow: 0 14px 40px rgba(2,6,12,0.66);
+  width: min(96%, 1100px); z-index: 2400; pointer-events: auto;
+  min-height: 150px; /* make the team area taller to accommodate more cards */
 }
 .team-sections { display:flex; gap:12px; align-items:center; width:100% }
-.team-equipo { flex: 1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center }
-.team-side-slots { display:flex; flex-direction:row; gap:20px; align-items:center; justify-content:flex-end }
+.team-equipo { flex: 1 1 auto; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; min-width: 0 }
+.team-side-slots { display:flex; flex-direction:row; gap:20px; align-items:center; justify-content:flex-end; flex: 0 0 auto; margin-left: 12px; z-index: 2450 }
 .team-slot { background: rgba(255,255,255,0.02); border-radius:8px; padding:8px; display:flex; flex-direction:column; align-items:center; min-height: 120px; min-width: 132px }
 .slot-body { display:flex; align-items:center; justify-content:center; width:100%; height:100% }
 .empty-slot { color: rgba(255,255,255,0.28); font-size:20px }
-.team-equipo .hand-area { padding: 6px 0 }
-.team-bar .hand-area { justify-content:center; display:flex; gap:0.6rem; align-items:flex-end; padding:0.25rem 0; pointer-events: auto }
+.team-equipo .hand-area { padding: 6px 0; width: 100%; box-sizing: border-box }
+.team-bar .hand-area { display:flex; gap:0.6rem; align-items:flex-end; padding:0.25rem 6px; pointer-events: auto; overflow-x: auto; overflow-y: hidden; width: 100%; -webkit-overflow-scrolling: touch; }
+
+/* Make cards inside the team area horizontally scrollable when many cards exist.
+  Keep the hover/stack animations but confine the overflow so side slots stay visible. */
+.team-bar .hand-area::-webkit-scrollbar { height: 10px }
+.team-bar .hand-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 8px }
+.team-bar .hand-area .hand-slot { flex: 0 0 auto }
+
+/* Reduce horizontal overlap inside team bar so cards don't visually intrude into side slots */
+.team-bar .hand-slot + .hand-slot { margin-left: -36px }
+
+/* Always-visible scrollbar / drag handle below the hand area */
+.team-bar .hand-area { cursor: grab }
+.team-bar .hand-area.dragging { cursor: grabbing }
 
 /* Floating controls and misc */
 .floating-controls { position: absolute; right: 12px; top: 56px; z-index: 2200; display:flex; gap:0.5rem; padding:0.5rem; background: rgba(6,8,10,0.55); border-radius:8px; border:1px solid rgba(255,255,255,0.03) }
@@ -160,6 +176,60 @@
 
 /* Mini menu centered above clicked card */
 .card-menu { position: fixed; z-index: 99999; background: linear-gradient(180deg, rgba(10,14,16,0.98), rgba(6,8,10,0.98)); border: 1px solid rgba(255,255,255,0.04); padding: 8px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); min-width: 160px; transform-origin: center bottom; transform: translate(-50%, -110%) }
+
+/* Card preview modal */
+.card-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99950;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+.card-modal-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.card-modal-content {
+  transform: scale(0.92);
+  transition: transform 240ms cubic-bezier(.2,.9,.2,1), opacity 240ms ease;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.card-modal-backdrop.show .card-modal-content {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.recruit-die {
+  background: linear-gradient(180deg,#1f2830,#0f1518);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 1.25rem;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+}
+.recruit-die[disabled] { opacity: 0.7; cursor: default }
+
+/* When showing a preview, scale the inner Card for readability. Use a wrapper class so we don't need to change Card.css */
+.card-modal-content .card-root { transform-origin: center center; transform: none; }
+.card-modal-content .card-root { box-shadow: 0 30px 80px rgba(0,0,0,0.7); }
+
+/* Larger sizes for preview -- override defaults selectively */
+.card-modal-content .card-root { width: 220px !important; height: 310px !important }
+.card-modal-content .card-risk { font-size: 4rem !important }
+.card-modal-content .card-conflict { font-size: 1.6rem !important }
+
+@media (max-width: 520px) {
+  .card-modal-content .card-root { width: 160px !important; height: 240px !important }
+  .card-modal-content { padding: 12px }
+}
 
 /* Responsive adjustments */
 @media (max-width: 900px) {
