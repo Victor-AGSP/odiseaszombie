@@ -89,17 +89,8 @@ export default function GameWindow({ onClose }) {
       return
     }
 
-    // create a visual clone for the flip animation
-    const rect = deckEl.getBoundingClientRect()
-    const clone = deckEl.cloneNode(true)
-    clone.style.position = 'fixed'
-    clone.style.left = `${rect.left}px`
-    clone.style.top = `${rect.top}px`
-    clone.style.margin = '0'
-    clone.style.pointerEvents = 'none'
-    clone.style.zIndex = 99999
-    clone.style.transformStyle = 'preserve-3d'
-    document.body.appendChild(clone)
+  // create a visual clone for the flip animation
+  const { clone, rect } = createFixedClone(deckEl)
 
     // flip in place (rotateY). At mid-point, swap content to show card front
     const half = clone.animate([
@@ -166,6 +157,24 @@ export default function GameWindow({ onClose }) {
 
   const tableRef = useRef(null)
   const handRef = useRef(null)
+  
+  // Helper: create a fixed-position visual clone of an element and append to body.
+  // Returns { clone, rect } where rect is the source element's bounding rect.
+  function createFixedClone(el, extraStyles = {}) {
+    const rect = el.getBoundingClientRect()
+    const clone = el.cloneNode(true)
+    clone.style.position = 'fixed'
+    clone.style.left = `${rect.left}px`
+    clone.style.top = `${rect.top}px`
+    clone.style.margin = '0'
+    clone.style.pointerEvents = 'none'
+    clone.style.zIndex = 99999
+    clone.style.transformStyle = 'preserve-3d'
+    // allow callers to override or add styles
+    Object.assign(clone.style, extraStyles)
+    document.body.appendChild(clone)
+    return { clone, rect }
+  }
   // panning state for table area
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
@@ -260,18 +269,8 @@ export default function GameWindow({ onClose }) {
 
   // Helper: animate a clone of srcEl to the center of destEl, then call cb
   function animateCardToTarget(srcEl, destEl, cb) {
-    const srcRect = srcEl.getBoundingClientRect()
+    const { clone, rect: srcRect } = createFixedClone(srcEl)
     const destRect = destEl.getBoundingClientRect()
-    const clone = srcEl.cloneNode(true)
-    const body = document.body
-    // ensure clone renders above everything and preserves 3D transforms
-    clone.style.position = 'fixed'
-    clone.style.left = `${srcRect.left}px`
-    clone.style.top = `${srcRect.top}px`
-    clone.style.margin = '0'
-    clone.style.zIndex = 99999
-    clone.style.pointerEvents = 'none'
-    clone.style.transformStyle = 'preserve-3d'
 
     // If the card has an inner 3D transform (card-inner), copy that computed transform
     const inner = clone.querySelector && (clone.querySelector('.card-inner') || clone.querySelector('.card-root'))
@@ -288,9 +287,7 @@ export default function GameWindow({ onClose }) {
       clone.style.transform = window.getComputedStyle(srcEl).transform || 'none'
     }
 
-    body.appendChild(clone)
-
-    const dx = destRect.left + destRect.width / 2 - (srcRect.left + srcRect.width / 2)
+  const dx = destRect.left + destRect.width / 2 - (srcRect.left + srcRect.width / 2)
     const dy = destRect.top + destRect.height / 2 - (srcRect.top + srcRect.height / 2)
     const dz = 0
     const scale = 0.9
@@ -397,7 +394,7 @@ export default function GameWindow({ onClose }) {
             <div className="deck-count">{deck.length}</div>
           </div>
           <div className="deck-controls">
-            <button className="draw-btn" disabled={isShowing || deck.length === 0} title={deck.length === 0 ? 'Mazo vacío' : ''} onClick={() => { closeCardMenu(); showCard() }}>{isShowing ? 'Mostrando…' : 'Mostrar'}</button>
+            <button className="draw-btn" disabled={isShowing || deck.length === 0} title={deck.length === 0 ? 'Mazo vacío' : ''} onClick={() => { closeCardMenu(); showCard() }}>Mostrar</button>
             <div className="discard">Descartar (0)</div>
           </div>
         </div>
@@ -411,8 +408,8 @@ export default function GameWindow({ onClose }) {
 
         <div className="gw-board">
           <div className="table-column">
-            <div className="table-pan" onMouseDown={startPan} onTouchStart={startPan}>
-              <div className="table-pan-inner" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+            <div className={`table-pan ${isDragging ? 'grabbing' : ''}`} onMouseDown={startPan} onTouchStart={startPan}>
+              <div className="table-pan-inner" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` }}>
                 <div className="table-cards" ref={tableRef}>
                   {table.map((c, i) => {
                 return (
@@ -443,29 +440,21 @@ export default function GameWindow({ onClose }) {
               <div className="hand-label">Equipo</div>
               <div className="hand-area" ref={handRef}>
                 {hand.map((c, i) => {
-              // Behavior: only move cards to the right of the hovered card so
-              // the hovered card is fully visible. Left-side cards stay overlapped.
+              // Behavior: move only cards that are on top of the hovered card (i > hoveredIndex).
+              // Use translate3d for GPU acceleration and remove stagger so the right-side cards
+              // move as a group (no individual delays). Hovered card lifts and scales.
               let tx = 0
               let ty = 0
               let scale = 1
-              // No rotation: rotate made the card hard to read. We'll use lift + scale only.
-              const gap = 80 // lateral offset applied to cards on the right; large enough to reveal hovered card
+              const gap = 80
               if (hoveredIndex !== null) {
-                if (i > hoveredIndex) {
-                  // shift right enough to reveal the hovered card
-                  tx = gap * (i - hoveredIndex)
-                }
-                if (i === hoveredIndex) {
-                  ty = -34 // lift hovered card a bit
-                  scale = 1.12
-                }
+                // Move all cards to the right of the hovered card by the same amount (group move)
+                if (i > hoveredIndex) tx = gap
+                if (i === hoveredIndex) { ty = -34; scale = 1.12 }
               }
-              // only stagger the right-side slide so animation feels natural
-              const delay = hoveredIndex !== null && i > hoveredIndex ? (i - hoveredIndex) * 60 : 0
               const style = {
-                transform: `translateX(${tx}px) translateY(${ty}px) scale(${scale})`,
-                zIndex: i === hoveredIndex ? 9999 : 200 + i,
-                transitionDelay: `${delay}ms`
+                transform: `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`,
+                zIndex: i === hoveredIndex ? 9999 : 200 + i
               }
               return (
                 <div
