@@ -80,6 +80,9 @@ export default function GameWindow({ onClose }) {
   const [recruitCard, setRecruitCard] = useState(null)
   const [isRolling, setIsRolling] = useState(false)
   const [rollResult, setRollResult] = useState(null)
+  // When recruitCard is a personaje and user tries to close by clicking outside,
+  // show a warning animation on the die briefly.
+  const [recruitWarn, setRecruitWarn] = useState(false)
   // modal for Evento reveals (simple acknowledge)
   const [eventModalCard, setEventModalCard] = useState(null)
 
@@ -201,6 +204,8 @@ export default function GameWindow({ onClose }) {
   const topRef = useRef(null)
   const isShowingRef = useRef(false)
   const [isShowing, setIsShowing] = useState(false)
+  // Visibility toggle for the entire team bar (Equipo, Evento, Talento, Iniciativa)
+  const [teamVisible, setTeamVisible] = useState(true)
 
   async function showCard() {
     // prevent concurrent reveals
@@ -749,6 +754,11 @@ export default function GameWindow({ onClose }) {
             <button className="draw-btn" disabled={isShowing || deck.length === 0} title={deck.length === 0 ? 'Mazo vacío' : ''} onClick={() => { closeCardMenu(); showCard() }}>Mostrar</button>
             <div className="discard">Descartar (0)</div>
           </div>
+          {/* Extra controls centered beneath the deck-stack */}
+          <div className="deck-extra-controls" aria-hidden={false}>
+            <button className="deck-extra-btn" onClick={() => { closeCardMenu(); resetView() }}>Restablecer vista</button>
+            <button className="deck-extra-btn" onClick={() => { setTeamVisible(v => !v); closeCardMenu(); }} aria-pressed={!teamVisible}>{teamVisible ? 'Ocultar equipo' : 'Revelar equipo'}</button>
+          </div>
         </div>
       </div>
 
@@ -789,15 +799,15 @@ export default function GameWindow({ onClose }) {
 
         {/* Floating controls top-right */}
         <div className="floating-controls">
-          <button onClick={() => { closeCardMenu(); pasoDecision() }}>Paso de decisión</button>
-          <button onClick={() => { closeCardMenu(); pasoRiesgo() }}>Riesgo</button>
-          <button onClick={() => { closeCardMenu(); pasoDefensa() }}>Defensa</button>
-          <button onClick={() => { closeCardMenu(); endDay() }}>Final día</button>
-          <button onClick={() => { closeCardMenu(); resetView() }}>Restablecer vista</button>
-        </div>
+            <button onClick={() => { closeCardMenu(); pasoDecision() }}>Paso de decisión</button>
+            <button onClick={() => { closeCardMenu(); pasoRiesgo() }}>Riesgo</button>
+            <button onClick={() => { closeCardMenu(); pasoDefensa() }}>Defensa</button>
+            <button onClick={() => { closeCardMenu(); endDay() }}>Final día</button>
+          </div>
 
-        <div className="team-bar">
-          <div className="team-sections">
+        {teamVisible && (
+          <div className="team-bar" role="region" aria-label="Barra del equipo">
+            <div className="team-sections">
             <div className="team-equipo">
               <div className="hand-label">Equipo</div>
               <div className="hand-area" ref={handRef}>
@@ -919,8 +929,9 @@ export default function GameWindow({ onClose }) {
                 </>) }
                 {/* Card preview modal */}
             </div>
+            </div>
           </div>
-        </div>
+        )}
 
   {/* footer removed: only surrender button in header remains to exit */}
       </div>
@@ -949,14 +960,28 @@ export default function GameWindow({ onClose }) {
         </div>
       </div>
       {/* Recruit modal for Personaje reveal */}
-      <div className={`card-modal-backdrop ${recruitCard ? 'show' : ''}`} onClick={() => closeRecruit()} role="dialog" aria-hidden={recruitCard ? 'false' : 'true'}>
-        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className={`card-modal-backdrop ${recruitCard ? 'show' : ''}`} role="dialog" aria-hidden={recruitCard ? 'false' : 'true'} onClick={(e) => {
+              // If there is a recruitCard and it's a personaje, prevent closing by clicking outside
+              if (recruitCard && recruitCard.type === 'personaje') {
+                // trigger a temporary warning animation on the die
+                setRecruitWarn(true)
+                setTimeout(() => setRecruitWarn(false), 520)
+                return
+              }
+              closeRecruit()
+            }}>
+            <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
           {recruitCard && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
               <Card type={recruitCard.type} risk={recruitCard.risk} conflict={recruitCard.conflict} rot={0} />
-              <button className="recruit-die" onClick={() => handleRecruitRoll()} disabled={isRolling} aria-label="Lanzar dado">
-                {isRolling ? (rollResult || '...') : '🎲'}
-              </button>
+                  <button
+                    className={`recruit-die ${recruitWarn ? 'shake-red' : ''}`}
+                    onClick={() => handleRecruitRoll()}
+                    disabled={isRolling}
+                    aria-label="Lanzar dado"
+                  >
+                    {isRolling ? (rollResult || '...') : '🎲'}
+                  </button>
               <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>
                 Haz clic en el dado. Si sale 1, el personaje se une al equipo; si no, va a la mesa.
               </div>

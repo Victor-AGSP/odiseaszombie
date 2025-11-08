@@ -58,6 +58,13 @@
   transform: translateZ(3px);
 }
 
+/* Unified border for cards on the mesa (table) - single source of truth */
+.table-cards .card-root .card-inner::after,
+.table-slot .card-root .card-inner::after {
+  border: 1px solid rgba(255,255,255,0.04);
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.06) inset;
+}
+
 .card-face{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:0.5rem;box-sizing:border-box;border-radius:10px;backface-visibility:hidden}
 .card-front{z-index:2}
 .card-back{transform:rotateY(180deg);background:linear-gradient(180deg,#081017,#05100d);display:flex;align-items:center;justify-content:center}
@@ -66,17 +73,13 @@
 /* Note: hover/pop straightening intentionally removed to keep cards' baseline perspective.
    Click animations are handled in JS for a custom disappear/reappear effect. */
 
-/* Disable the hover straightening effect for cards that are rendered on the table.
-   Table cards should keep the baseline tilted perspective even when hovered. */
-.table-cards .card-root:hover .card-inner,
-.table-cards .card-root:focus .card-inner,
-.table-cards .card-root:active .card-inner,
-.table-slot .card-root:hover .card-inner,
-.table-slot .card-root:focus .card-inner,
-.table-slot .card-root:active .card-inner {
-  /* Keep the baseline tilt and original shadow used for non-hover state */
+/* Canonical table-card style: single source of truth for cards displayed on the mesa.
+   This prevents multiple conflicting rules from making errant (4-roll) cards look different. */
+.table-cards .card-root .card-inner,
+.table-slot .card-root .card-inner {
   transform: rotateX(22deg) translateZ(-2px);
-  box-shadow: 0 8px 30px rgba(2,6,23,0.65), inset 0 -4px 12px rgba(0,0,0,0.45);
+  /* unified shadow + subtle red glow for mesa */
+  box-shadow: 0 10px 30px rgba(2,6,23,0.6), inset 0 -4px 12px rgba(0,0,0,0.45), 0 0 18px rgba(138,7,7,0.06);
 }
 
 /* Smooth return to default tilt when mouse leaves - handled by .card-inner transition above */
@@ -122,7 +125,27 @@
 .card-art { margin-top: auto; margin-bottom: 8px; font-size: 1.6rem; opacity: 0.9 }
 
 .card-root.allied .card-inner::after{ border-color: rgba(120,200,180,0.16); box-shadow: 0 0 0 3px rgba(120,200,180,0.03) inset }
-.card-root.errant .card-inner{ box-shadow:0 14px 40px rgba(120,40,40,0.32) }
+
+/* Normalize errant global shadow to match base so it doesn't make borders darker by default */
+.card-root.errant .card-inner{ box-shadow: 0 8px 30px rgba(2,6,23,0.65), inset 0 -4px 12px rgba(0,0,0,0.45) }
+
+/* Ensure errant cards placed on the mesa use the unified mesa style (no extra heavy shadow) */
+.table-cards .card-root.errant .card-inner,
+.table-slot .card-root.errant .card-inner {
+  box-shadow: 0 10px 30px rgba(2,6,23,0.6), inset 0 -4px 12px rgba(0,0,0,0.45), 0 0 18px rgba(138,7,7,0.06);
+}
+
+/* Optional gentle pulse to emulate the small light behind the card when a 4 is rolled */
+.table-cards .card-root.pulse .card-inner,
+.table-slot .card-root.pulse .card-inner {
+  animation: mesa-pulse 1600ms ease-in-out infinite;
+}
+
+@keyframes mesa-pulse {
+  0% { box-shadow: 0 10px 30px rgba(2,6,23,0.6), inset 0 -4px 12px rgba(0,0,0,0.45), 0 0 10px rgba(138,7,7,0.04); }
+  50% { box-shadow: 0 10px 30px rgba(2,6,23,0.6), inset 0 -4px 12px rgba(0,0,0,0.45), 0 0 18px rgba(138,7,7,0.09); }
+  100% { box-shadow: 0 10px 30px rgba(2,6,23,0.6), inset 0 -4px 12px rgba(0,0,0,0.45), 0 0 10px rgba(138,7,7,0.04); }
+}
 
 /* Responsive adjustments grouped and ordered from large -> small */
 @media (max-width: 920px) {
