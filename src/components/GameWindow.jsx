@@ -80,6 +80,8 @@ export default function GameWindow({ onClose }) {
   const [recruitCard, setRecruitCard] = useState(null)
   const [isRolling, setIsRolling] = useState(false)
   const [rollResult, setRollResult] = useState(null)
+  // modal for Evento reveals (simple acknowledge)
+  const [eventModalCard, setEventModalCard] = useState(null)
 
   function pushLog(msg) {
     setLog(l => [msg, ...l].slice(0, 8))
@@ -92,8 +94,9 @@ export default function GameWindow({ onClose }) {
     setDeck(rest)
     // If the top is an Evento, assign to player's event (replace previous)
     if (top && top.type === 'evento') {
-      setPlayerEvents([top])
-      pushLog('Robaste un Evento y reemplazaste el evento anterior')
+      // show a simple modal so the player can acknowledge the new Evento
+      setEventModalCard(top)
+      pushLog('Robaste un Evento (pulsa continuar para aplicarlo)')
     } else {
       setHand(h => [...h, top])
       pushLog('Robaste una carta')
@@ -102,7 +105,85 @@ export default function GameWindow({ onClose }) {
 
   function openPreview(card, e) {
     e && e.stopPropagation && e.stopPropagation()
+    // show modal immediately so the UI appears fast; animation will be decorative
     setPreviewCard(card)
+    // Temporarily reduce modal transition so it appears visually instant to the user.
+    // We add a short-lived class 'fast-show' which CSS maps to much shorter durations.
+    try {
+      requestAnimationFrame(() => {
+        const bd = document.querySelector('.card-modal-backdrop')
+        if (bd) bd.classList.add('fast-show')
+        // remove the class shortly after so subsequent interactions use normal polish
+        setTimeout(() => { if (bd) bd.classList.remove('fast-show') }, 180)
+      })
+    } catch (err) {
+      // ignore
+    }
+    // If we have an element target, animate a visual clone from the card to the center
+    try {
+      const srcEl = e && e.currentTarget
+      if (srcEl && srcEl.getBoundingClientRect) {
+        const { clone, rect } = createFixedClone(srcEl)
+        // target: prefer the actual modal content position so the clone animates to where the popup will appear
+        const modalEl = document.querySelector('.card-modal-content')
+        let dx = 0
+        let dy = 0
+        let scale = 1
+        if (modalEl && modalEl.getBoundingClientRect) {
+          const destRect = modalEl.getBoundingClientRect()
+          const scaleX = destRect.width / rect.width
+          const scaleY = destRect.height / rect.height
+          dx = destRect.left - rect.left
+          dy = destRect.top - rect.top
+          // Keep the source card visually in its popped state during the animation
+          let srcCardRoot = null
+          try {
+            srcCardRoot = (e && e.currentTarget && (e.currentTarget.querySelector && e.currentTarget.querySelector('.card-root'))) || null
+            if (!srcCardRoot && e && e.currentTarget && e.currentTarget.classList && e.currentTarget.classList.contains('card-root')) srcCardRoot = e.currentTarget
+            if (srcCardRoot) srcCardRoot.classList.add('preview-source')
+          } catch (err) {
+            srcCardRoot = null
+          }
+
+          // Professional, fluid keyframes with slight overshoot and rotation for depth
+          const fromTransform = window.getComputedStyle(clone).transform || 'none'
+          const anim = clone.animate([
+            { transform: fromTransform, opacity: 1 },
+            { transform: `translate3d(${dx * 0.9}px, ${dy * 0.9}px, 0) scale(${scaleX * 1.06}, ${scaleY * 1.06}) rotateZ(-2deg)`, offset: 0.72, opacity: 1 },
+            { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY}) rotateZ(0deg)`, offset: 1, opacity: 1 }
+          ], { duration: 520, easing: 'cubic-bezier(.2,.9,.28,1)', fill: 'forwards' })
+
+          anim.onfinish = () => {
+            try { clone.remove() } catch (er) {}
+            if (srcCardRoot) srcCardRoot.classList.remove('preview-source')
+            // modal already shown; no need to setPreviewCard again
+          }
+          return
+        } else {
+          // fallback: center of viewport
+          const vw = window.innerWidth
+          const vh = window.innerHeight
+          const destLeft = (vw - Math.min(420, vw * 0.8)) / 2
+          const destTop = (vh - Math.min(600, vh * 0.8)) / 2
+          const destWidth = Math.min(420, vw * 0.8)
+          scale = destWidth / rect.width
+          dx = destLeft - rect.left
+          dy = destTop - rect.top
+
+          clone.animate([
+            { transform: window.getComputedStyle(clone).transform || 'none', opacity: 1 },
+            { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`, opacity: 1 }
+          ], { duration: 420, easing: 'cubic-bezier(.22,.9,.3,1)', fill: 'forwards' }).onfinish = () => {
+            try { clone.remove() } catch (er) {}
+            // modal already shown; no need to setPreviewCard again
+          }
+          return
+        }
+      }
+    } catch (err) {
+      // fallback to instant preview if animation fails
+      console.error('Preview animation failed', err)
+    }
   }
 
   function closePreview() {
@@ -195,9 +276,9 @@ export default function GameWindow({ onClose }) {
     // top already removed from deck; place into table or event slot
   try {
         if (topRef.current && topRef.current.type === 'evento') {
-      // replace player's event with the new one
-      setPlayerEvents([topRef.current])
-      pushLog('Mostraste un Evento y reemplazaste el evento anterior')
+      // show a simple modal to acknowledge the Evento before applying it
+      setEventModalCard(topRef.current)
+      pushLog('Mostraste un Evento (pulsa continuar para aplicarlo)')
         } else if (topRef.current && topRef.current.type === 'personaje') {
           // show recruit modal: player must roll a die to try to recruit
           setRecruitCard(topRef.current)
@@ -298,6 +379,15 @@ export default function GameWindow({ onClose }) {
     clone.style.pointerEvents = 'none'
     clone.style.zIndex = 99999
     clone.style.transformStyle = 'preserve-3d'
+    // Fix size and transform origin so scale/translate animations are predictable
+    clone.style.width = `${rect.width}px`
+    clone.style.height = `${rect.height}px`
+    clone.style.transformOrigin = 'top left'
+    // visual polish for animation: rounded corners, shadow and clipping
+    clone.style.borderRadius = '10px'
+    clone.style.overflow = 'hidden'
+    clone.style.boxShadow = '0 24px 60px rgba(2,6,23,0.6)'
+    clone.style.willChange = 'transform,opacity'
     // allow callers to override or add styles
     Object.assign(clone.style, extraStyles)
     document.body.appendChild(clone)
@@ -305,16 +395,36 @@ export default function GameWindow({ onClose }) {
   }
   // panning state for table area
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const isDraggingRef = useRef(false)
   const lastPosRef = useRef({ x: 0, y: 0 })
   const panRef = useRef({ x: 0, y: 0 })
+  // When user finishes panning the table we set this to ignore the next click
+  const panIgnoreClickRef = useRef(false)
+  // Track pointer-down state and initial position so short clicks don't count as pan
+  const panPointerDownRef = useRef(false)
+  const panStartRef = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
     function onMove(e) {
-      if (!isDraggingRef.current) return
       const clientX = e.touches ? e.touches[0].clientX : e.clientX
       const clientY = e.touches ? e.touches[0].clientY : e.clientY
+
+      // If pointer is down but we haven't started a drag yet, check threshold
+      if (panPointerDownRef.current && !isDraggingRef.current) {
+        const dxStart = clientX - panStartRef.current.x
+        const dyStart = clientY - panStartRef.current.y
+        if (Math.hypot(dxStart, dyStart) < 6) return // still a click
+        // start dragging
+        isDraggingRef.current = true
+        setIsDragging(true)
+        lastPosRef.current = { x: clientX, y: clientY }
+        return
+      }
+
+      if (!isDraggingRef.current) return
+
       const dx = clientX - lastPosRef.current.x
       const dy = clientY - lastPosRef.current.y
       lastPosRef.current = { x: clientX, y: clientY }
@@ -324,9 +434,15 @@ export default function GameWindow({ onClose }) {
     }
 
     function onUp() {
-      if (!isDraggingRef.current) return
+      const wasDragging = isDraggingRef.current
       isDraggingRef.current = false
+      panPointerDownRef.current = false
       setIsDragging(false)
+      if (wasDragging) {
+        // Ignore the immediate next click after finishing a pan to avoid opening previews
+        panIgnoreClickRef.current = true
+        setTimeout(() => { panIgnoreClickRef.current = false }, 60)
+      }
     }
 
     window.addEventListener('mousemove', onMove)
@@ -370,9 +486,25 @@ export default function GameWindow({ onClose }) {
     e.stopPropagation && e.stopPropagation()
     const clientX = e.touches ? e.touches[0].clientX : e.clientX
     const clientY = e.touches ? e.touches[0].clientY : e.clientY
-    isDraggingRef.current = true
-    setIsDragging(true)
+    // mark pointer down; only start dragging after movement threshold
+    panPointerDownRef.current = true
+    panStartRef.current = { x: clientX, y: clientY }
     lastPosRef.current = { x: clientX, y: clientY }
+  }
+
+  // Zoom with mouse wheel when over the table (desktop). Uses a gentle step and clamps range.
+  function onTableWheel(e) {
+    // ignore on mobile views
+    if (isMobileView) return
+    // Prevent page scroll when zooming
+    e.preventDefault && e.preventDefault()
+    const step = 0.0018
+    // invert so wheel up zooms in
+    const delta = -e.deltaY
+    let next = zoom + delta * step
+    next = Math.max(0.6, Math.min(1.8, next))
+    if (Math.abs(next - zoom) < 0.0001) return
+    setZoom(next)
   }
 
   // Play a card with a "fly to target" animation. event is passed from the Card's onClick.
@@ -501,6 +633,15 @@ export default function GameWindow({ onClose }) {
     pushLog('Final del día: contadores actualizados')
   }
 
+  // Reset pan/zoom to initial state and clear any pressed/hover visuals
+  function resetView() {
+    setPan({ x: 0, y: 0 })
+    panRef.current = { x: 0, y: 0 }
+    setZoom(1)
+    try { window.dispatchEvent(new Event('clearCardPressed')) } catch (e) {}
+    pushLog('Vista reiniciada')
+  }
+
   function openCardMenu(card, event, index) {
     // prevent the root onClick from immediately closing the menu
     event && event.stopPropagation && event.stopPropagation()
@@ -551,8 +692,18 @@ export default function GameWindow({ onClose }) {
           // recruited into player's hand (equipo) so it becomes visible in the team bar
           setHand(h => [...h, recruitCard])
           pushLog('¡Reclutaste al personaje y se unió al equipo!')
+        } else if (final === 3) {
+          // result 3: returns to encounter deck and its risk is added to zombies
+          setDeck(d => [recruitCard, ...d])
+          setZombies(z => z + (recruitCard.risk || 0))
+          pushLog(`El dado salió 3: el personaje volvió a la baraja y su riesgo (${recruitCard.risk || 0}) se añadió a la amenaza`)
+        } else if (final === 4) {
+          // result 4: remains errant on the table and adds its risk to zombies
+          setTable(t => [...t, { ...recruitCard, errant: true }])
+          setZombies(z => z + (recruitCard.risk || 0))
+          pushLog(`El dado salió 4: el personaje quedó errante en mesa y su riesgo (${recruitCard.risk || 0}) se añadió a la amenaza`)
         } else {
-          // placed on table
+          // default: placed on table (not errant)
           setTable(t => [...t, recruitCard])
           pushLog(`El dado salió ${final}: el personaje fue colocado en mesa`)
         }
@@ -566,6 +717,16 @@ export default function GameWindow({ onClose }) {
         topRef.current = null
       }, 380)
     }, 720)
+  }
+
+  function handleEventContinue() {
+    if (!eventModalCard) return
+    try {
+      setPlayerEvents([eventModalCard])
+      pushLog('Evento aplicado: reemplazaste el evento anterior')
+    } finally {
+      setEventModalCard(null)
+    }
   }
 
   return (
@@ -600,14 +761,22 @@ export default function GameWindow({ onClose }) {
 
         <div className="gw-board">
           <div className="table-column">
-            <div className={`table-pan ${isDragging ? 'grabbing' : ''}`} onMouseDown={startPan} onTouchStart={startPan}>
-              <div className="table-pan-inner" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` }}>
+            <div className={`table-pan ${isDragging ? 'grabbing' : ''}`} onMouseDown={startPan} onTouchStart={startPan} onWheel={onTableWheel}>
+              <div className="table-pan-inner" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}>
                 <div className="table-cards" ref={tableRef}>
                   {table.map((c, i) => {
                 return (
                   <div className="table-slot" key={c.id || i}>
-                      <Card type={c.type} risk={c.risk} conflict={c.conflict} allied={!c.errant} errant={c.errant} rot={0} onClick={(e) => openPreview(c, e)} />
-                    </div>
+                        <Card
+                          type={c.type}
+                          risk={c.risk}
+                          conflict={c.conflict}
+                          allied={!c.errant}
+                          errant={c.errant}
+                          rot={0}
+                          onClick={(e) => { if (panIgnoreClickRef.current) { e.stopPropagation(); return } openPreview(c, e) }}
+                        />
+                      </div>
                 )
               })}
                 </div>
@@ -624,6 +793,7 @@ export default function GameWindow({ onClose }) {
           <button onClick={() => { closeCardMenu(); pasoRiesgo() }}>Riesgo</button>
           <button onClick={() => { closeCardMenu(); pasoDefensa() }}>Defensa</button>
           <button onClick={() => { closeCardMenu(); endDay() }}>Final día</button>
+          <button onClick={() => { closeCardMenu(); resetView() }}>Restablecer vista</button>
         </div>
 
         <div className="team-bar">
@@ -649,21 +819,21 @@ export default function GameWindow({ onClose }) {
                 transform: `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`,
                 zIndex: i === hoveredIndex ? 9999 : 200 + i
               }
-              return (
+                return (
                 <div
                   className="hand-slot"
                   key={i}
                   style={style}
                   onMouseEnter={() => setHoveredIndex(i)}
                   onMouseLeave={() => setHoveredIndex(null)}
-                  onClick={(e) => { if (ignoreClickRef.current) { e.stopPropagation(); return } e.stopPropagation(); openPreview(c, e) }}
-                  onContextMenu={(e) => { openCardMenu(c, e, i) }}
                 >
                   <Card
                     type={c.type}
                     risk={c.risk}
                     conflict={c.conflict}
                     rot={0}
+                    onClick={(e) => { if (ignoreClickRef.current) { e.stopPropagation(); return } e.stopPropagation(); openPreview(c, e) }}
+                    onContextMenu={(e) => { openCardMenu(c, e, i) }}
                   />
                 </div>
               )
@@ -697,8 +867,8 @@ export default function GameWindow({ onClose }) {
                         <div className="side-slot-label">{sideLabels[sideIndex]}</div>
                         <div className="side-slot-body" style={{ transform: `translateX(${sideTranslate}px)` }}>
                           {current ? (
-                            <div onClick={(e) => { e.stopPropagation(); openPreview(current, e) }} onContextMenu={(e) => { openCardMenu(current, e, null) }}>
-                              <Card type={current.type} risk={current.risk} conflict={current.conflict} rot={0} />
+                            <div onContextMenu={(e) => { openCardMenu(current, e, null) }}>
+                              <Card type={current.type} risk={current.risk} conflict={current.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(current, e) }} onContextMenu={(e) => { openCardMenu(current, e, null) }} />
                             </div>
                           ) : (
                             <div className="empty-slot">—</div>
@@ -718,8 +888,8 @@ export default function GameWindow({ onClose }) {
                     <div className="slot-label">Evento</div>
                     <div className="slot-body">
                       {playerEvents[0] ? (
-                        <div onClick={(e) => { e.stopPropagation(); openPreview(playerEvents[0], e) }} onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }}>
-                          <Card type={playerEvents[0].type} risk={playerEvents[0].risk} conflict={playerEvents[0].conflict} rot={0} />
+                        <div onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }}>
+                          <Card type={playerEvents[0].type} risk={playerEvents[0].risk} conflict={playerEvents[0].conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(playerEvents[0], e) }} onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }} />
                         </div>
                       ) : <div className="empty-slot">—</div>}
                     </div>
@@ -729,8 +899,8 @@ export default function GameWindow({ onClose }) {
                     <div className="slot-label">Talento</div>
                     <div className="slot-body">
                       {talentoCard ? (
-                        <div onClick={(e) => { e.stopPropagation(); openPreview(talentoCard, e) }} onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }}>
-                          <Card type={talentoCard.type} risk={talentoCard.risk} conflict={talentoCard.conflict} rot={0} />
+                        <div onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }}>
+                          <Card type={talentoCard.type} risk={talentoCard.risk} conflict={talentoCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(talentoCard, e) }} onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }} />
                         </div>
                       ) : <div className="empty-slot">—</div>}
                     </div>
@@ -740,14 +910,14 @@ export default function GameWindow({ onClose }) {
                     <div className="slot-label">Iniciativa</div>
                     <div className="slot-body">
                       {iniciativaCard ? (
-                        <div onClick={(e) => { e.stopPropagation(); openPreview(iniciativaCard, e) }} onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }}>
-                          <Card type={iniciativaCard.type} risk={iniciativaCard.risk} conflict={iniciativaCard.conflict} rot={0} />
+                        <div onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }}>
+                          <Card type={iniciativaCard.type} risk={iniciativaCard.risk} conflict={iniciativaCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(iniciativaCard, e) }} onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }} />
                         </div>
                       ) : <div className="empty-slot">—</div>}
                     </div>
                   </div>
-                </>
-              )}
+                </>) }
+                {/* Card preview modal */}
             </div>
           </div>
         </div>
@@ -790,6 +960,17 @@ export default function GameWindow({ onClose }) {
               <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>
                 Haz clic en el dado. Si sale 1, el personaje se une al equipo; si no, va a la mesa.
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Evento acknowledge modal: simple card + Continue button */}
+      <div className={`card-modal-backdrop ${eventModalCard ? 'show' : ''}`} onClick={() => { if (eventModalCard) handleEventContinue() }} role="dialog" aria-hidden={eventModalCard ? 'false' : 'true'}>
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          {eventModalCard && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <Card type={eventModalCard.type} risk={eventModalCard.risk} conflict={eventModalCard.conflict} rot={0} />
+              <button className="recruit-die" onClick={() => handleEventContinue()} aria-label="Continuar">Continuar</button>
             </div>
           )}
         </div>

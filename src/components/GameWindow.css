@@ -26,7 +26,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: 180px; /* leave room for the enlarged team-bar so board content won't be overlapped */
+  padding-bottom: 120px; /* reduced: leave room for the team-bar but avoid excessive empty space below the table */
 }
 
 /* Header */
@@ -104,7 +104,19 @@
 .table-slot .card-root { transform-origin: center center; width:104px; height:140px }
 .table-pan { overflow: hidden; width: 100%; display:flex; flex-direction:column; justify-content:flex-start; align-items:stretch; cursor: grab; flex: 1 1 auto; min-height: 0 }
 .table-pan.grabbing { cursor: grabbing }
-.table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; align-items:stretch }
+.table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; /* avoid stretching children vertically so the outlined area matches content */ align-items:flex-start }
+
+/* Outline and constrained area for the table so it doesn't visually 'disappear' or become too tall */
+.table-cards {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02), 0 8px 24px rgba(0,0,0,0.45);
+  /* limit vertical size so the outline doesn't extend too far downward; allow scroll if many cards */
+  max-height: 360px;
+  overflow: auto;
+}
 
 /* When user is actively dragging, disable transition so panning feels immediate */
 .table-pan.grabbing .table-pan-inner { transition: none !important }
@@ -189,6 +201,13 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 240ms ease;
+}
+.card-modal-backdrop.fast-show {
+  /* Shorten the transition when we want instant feedback */
+  transition-duration: 40ms !important;
+}
+.card-modal-backdrop.fast-show .card-modal-content {
+  transition-duration: 40ms !important;
 }
 .card-modal-backdrop.show {
   opacity: 1;

@@ -20,7 +20,8 @@
   width:100%;
   height:100%;
   transform-style:preserve-3d;
-  transition: transform 420ms cubic-bezier(.22,.9,.3,1), box-shadow 180ms ease;
+  /* single canonical transition for card inner (kept concise and snappy) */
+  transition: transform 360ms cubic-bezier(.22,.9,.3,1), box-shadow 180ms ease;
   /* baseline perspective tilt: top appears further (smaller) than bottom */
   transform-origin: center top;
   transform: rotateX(22deg) translateZ(-2px); /* stronger tilt for more pronounced perspective */
@@ -62,17 +63,31 @@
 .card-back{transform:rotateY(180deg);background:linear-gradient(180deg,#081017,#05100d);display:flex;align-items:center;justify-content:center}
 .card-back-art{font-size:2rem;opacity:0.9}
 
-/* Hover/tilt effect applied to inner face (uses parent's perspective) */
-.card-root:hover .card-inner,
-.card-root:focus .card-inner,
-.card-root:active .card-inner{
-  /* On hover/focus/active the card becomes straight (no rotateX/rotateY) and slightly pops forward */
-  transform: rotateX(0deg) rotateY(0deg) translateZ(28px) translateY(-2px);
-  box-shadow: 0 40px 88px rgba(2,6,23,0.88);
+/* Note: hover/pop straightening intentionally removed to keep cards' baseline perspective.
+   Click animations are handled in JS for a custom disappear/reappear effect. */
+
+/* Disable the hover straightening effect for cards that are rendered on the table.
+   Table cards should keep the baseline tilted perspective even when hovered. */
+.table-cards .card-root:hover .card-inner,
+.table-cards .card-root:focus .card-inner,
+.table-cards .card-root:active .card-inner,
+.table-slot .card-root:hover .card-inner,
+.table-slot .card-root:focus .card-inner,
+.table-slot .card-root:active .card-inner {
+  /* Keep the baseline tilt and original shadow used for non-hover state */
+  transform: rotateX(22deg) translateZ(-2px);
+  box-shadow: 0 8px 30px rgba(2,6,23,0.65), inset 0 -4px 12px rgba(0,0,0,0.45);
 }
 
-/* Smooth return to default tilt when mouse leaves */
-.card-root .card-inner{ transition: transform 360ms cubic-bezier(.22,.9,.3,1), box-shadow 180ms ease; }
+/* Smooth return to default tilt when mouse leaves - handled by .card-inner transition above */
+
+/* When a card is the source of a preview animation, keep it visually popped for the duration
+   so it doesn't snap back while a clone flies to the modal. The class is added/removed via JS. */
+.preview-source .card-inner {
+  transform: rotateX(0deg) rotateY(0deg) translateZ(28px) translateY(-2px) !important;
+  box-shadow: 0 40px 88px rgba(2,6,23,0.88) !important;
+  transition: transform 520ms cubic-bezier(.2,.9,.28,1), box-shadow 320ms ease !important;
+}
 
 .card-badge {
   position: absolute;
@@ -109,26 +124,22 @@
 .card-root.allied .card-inner::after{ border-color: rgba(120,200,180,0.16); box-shadow: 0 0 0 3px rgba(120,200,180,0.03) inset }
 .card-root.errant .card-inner{ box-shadow:0 14px 40px rgba(120,40,40,0.32) }
 
-/* Reduce tilt on narrow screens to avoid excessive distortion */
+/* Responsive adjustments grouped and ordered from large -> small */
 @media (max-width: 920px) {
-  .card-inner{ transform: rotateX(16deg) translateZ(-1px) }
+  /* slightly reduce tilt on medium screens */
+  .card-inner { transform: rotateX(16deg) translateZ(-1px) }
 }
 
 @media (max-width: 720px) {
-  .card-inner{ transform: rotateX(10deg) }
-}
-
-@media (max-width: 420px) {
-  .card-inner{ transform: rotateX(6deg) }
-}
-
-@media (max-width: 720px) {
+  /* further reduce tilt and slightly smaller card size */
+  .card-inner { transform: rotateX(10deg) }
   .card-root { width: 100px; height: 150px }
   .card-risk { font-size: 2.2rem }
 }
 
-/* Smaller cards for narrow phones */
 @media (max-width: 420px) {
+  /* compact phone sizes */
+  .card-inner { transform: rotateX(6deg) }
   .card-root { width: 88px; height: 132px }
   .card-risk { font-size: 1.8rem }
   .card-conflict { font-size: 0.95rem }
