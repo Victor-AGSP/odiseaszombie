@@ -81,21 +81,29 @@
   Deck area
   ----------------------------- */
 .deck-area { display:flex; flex-direction:column; align-items:center; gap:0.6rem }
-.deck-stack { position:relative }
+.deck-stack { position:relative; width:60px; height:84px; display:inline-flex; align-items:center; justify-content:center }
 .deck-card {
   width:60px; height:84px; border-radius:7px;
   display:flex; align-items:center; justify-content:center; font-size:1.4rem;
   /* reduced shadow for performance */
   box-shadow:0 6px 14px rgba(6,10,14,0.42);
   position:relative;
-  background: linear-gradient(180deg, rgba(11,60,93,0.95), rgba(8,24,40,0.95));
+  z-index:2; /* keep card above the stack pseudo-layers */
+  /* use palette vars and a subtle two-tone gradient for depth */
+  background: linear-gradient(180deg, var(--navy-base) 0%, rgba(6,18,26,0.95) 100%);
   border: 1px solid rgba(255,255,255,0.03);
+  color: var(--soft-white);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.6);
 }
-.deck-card::before{ content:''; position:absolute; inset:5px; border-radius:6px; background:linear-gradient(180deg, rgba(6,32,42,0.9), rgba(4,16,24,0.9)); opacity:0.9 }
-.deck-count { position:absolute; right:-8px; bottom:-10px; background:linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.9)); color: var(--soft-white); padding:4px 8px; border-radius:10px; font-weight:800; box-shadow: 0 4px 10px rgba(138,7,7,0.12) }
-.deck-stack::before,.deck-stack::after{ content:''; position:absolute; left:5px; top:5px; width:60px; height:84px; border-radius:7px; background: linear-gradient(180deg, rgba(11,60,93,0.9), rgba(6,18,26,0.9)); box-shadow:0 6px 18px rgba(2,6,12,0.42); transform:translate3d(-5px,5px,0); opacity:0.85 }
-.deck-stack::before{ box-shadow:0 5px 10px rgba(2,6,12,0.32) }
-.deck-stack::after{ transform:translate3d(-8px,8px,0); opacity:0.7; box-shadow:0 3px 8px rgba(2,6,12,0.28) }
+.deck-card::before{ content:''; position:absolute; inset:5px; border-radius:6px; /* subtle inner overlay for contrast */
+  background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.18)); opacity:0.9 }
+.deck-count { position:absolute; left:50%; transform:translateX(-50%); bottom:-12px; right:auto; background:linear-gradient(180deg, var(--blood-red), rgba(110,6,6,0.9)); color: var(--soft-white); padding:4px 8px; border-radius:10px; font-weight:800; box-shadow: 0 4px 10px rgba(138,7,7,0.12); z-index:3 }
+.deck-stack::before,.deck-stack::after{ content:''; position:absolute; left:0; top:0; width:100%; height:100%; border-radius:7px; /* stack shadows using palette */
+  background: linear-gradient(180deg, var(--navy-base) 0%, rgba(6,18,26,0.9) 100%);
+  box-shadow:0 6px 18px rgba(2,6,12,0.42); opacity:0.85 }
+.deck-stack::before{ transform: translate3d(-6px,6px,0); z-index:0; box-shadow:0 5px 10px rgba(2,6,12,0.32) }
+.deck-stack::after{ transform: translate3d(-10px,10px,0); opacity:0.7; z-index:-1; box-shadow:0 3px 8px rgba(2,6,12,0.28) }
+.deck-stack:hover .deck-card { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(2,6,14,0.34); transition: transform 180ms ease, box-shadow 180ms ease }
 .draw-btn { padding: 0.45rem 0.7rem; border-radius:8px; background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.94)); color: var(--soft-white); border:none; cursor:pointer; font-weight:800; letter-spacing:0.2px }
 .discard { opacity:0.8; font-size:0.9rem }
 .draw-btn[disabled], .draw-btn:disabled { opacity: 0.5; cursor: not-allowed; /* avoid filter: grayscale which triggers repaint */ }
@@ -105,6 +113,9 @@
 .deck-extra-controls { display:flex; gap:8px; flex-direction:column; align-items:center; justify-content:center; margin-left: 6px }
 .deck-extra-btn { padding: 0.4rem 0.7rem; border-radius:8px; background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.94)); color: var(--soft-white); border:none; cursor:pointer; font-weight:700; transition: transform 120ms cubic-bezier(.2,.9,.3,1) }
 .deck-extra-btn:active { transform: translateY(1px) }
+
+.deck-discard-btn { padding: 0.35rem 0.6rem; border-radius:8px; background: linear-gradient(180deg, rgba(6,18,26,0.9), rgba(8,28,40,0.9)); color: var(--soft-white); border:none; cursor:pointer; font-weight:700; font-size:0.85rem }
+.deck-discard-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 22px rgba(2,6,14,0.28) }
 
 /* -----------------------------
   Table (cards on board)
@@ -226,8 +237,9 @@
 .gw-log ul { margin:0; padding:0; list-style:none }
 .gw-log li { background: rgba(255,255,255,0.02); margin-bottom:6px; padding:6px 8px; border-radius:6px }
 .gw-footer { padding: 0.6rem 1rem; text-align: right; font-size: 0.85rem; color: rgba(255,255,255,0.6); border-top: 1px solid rgba(255,255,255,0.02) }
-.gw-overlay-stats { position: absolute; left: 1.5rem; top: 1.5rem; display: flex; flex-direction: row; gap: 0.8rem; align-items: center; z-index: 2100 }
-.gw-overlay-stats .stats-box { background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.04); padding: 0.45rem 0.6rem; border-radius: 8px; color: #eaf5ff; font-size: 0.85rem; display:flex; flex-direction:column; align-items:center; gap:0.15rem }
+.gw-overlay-stats { position: absolute; left: 1.9rem; top: 1.1rem; display: flex; flex-direction: row; gap: 0.8rem; align-items: center; z-index: 2100; transition: left 160ms ease, top 160ms ease }
+.gw-overlay-stats .stats-box { /* slight blue tint and softer border to match palette */
+  background: rgba(11,60,93,0.16); border: 1px solid rgba(255,255,255,0.04); padding: 0.45rem 0.6rem; border-radius: 8px; color: #eaf5ff; font-size: 0.85rem; display:flex; flex-direction:column; align-items:center; gap:0.15rem }
 .stat-value { font-weight:800; font-size:1.1rem }
 .player-events { margin-top: 0.6rem }
 .events-label { font-size:0.85rem; color:#dbeff0; margin-bottom:0.4rem }

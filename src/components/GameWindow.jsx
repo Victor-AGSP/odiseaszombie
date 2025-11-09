@@ -12,30 +12,12 @@ function normalizeFileName(name = '') {
   return noDiacritics.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_\-]/g, '')
 }
 
-// Fallback sample generator if XLSX load fails
-function generateDeckFallback() {
-  const types = ['personaje','personaje','personaje','evento']
-  const deck = []
-  for (let i = 0; i < 30; i++) {
-    const type = types[Math.floor(Math.random() * types.length)]
-    let risk = 0
-    let conflict = 0
-    if (type === 'personaje') {
-      risk = Math.floor(Math.random() * 7) - 2
-      conflict = Math.floor(Math.random() * 5) + 1
-    } else {
-      risk = Math.floor(Math.random() * 4) - 1
-      conflict = 0
-    }
-    deck.push({ id: `f-${i}`, name: `sample-${i}`, type, risk, conflict, img: null })
-  }
-  return deck
-}
+// NOTE: removed fallback generator to avoid allocating sample card objects on mount.
+// If loading fails we now keep the deck empty (no in-memory fallback data).
 
 export default function GameWindow({ onClose }) {
-  // Initialize deck and hand without mutating the same array
-  // Player starts with no cards in the team/hand; only Talento, Evento and Iniciativa are present
-  const [deck, setDeck] = useState(() => generateDeckFallback())
+  // Initialize deck empty to avoid keeping generated sample cards in memory.
+  const [deck, setDeck] = useState([])
   const [hand, setHand] = useState([])
   const [table, setTable] = useState([])
   // start with a sample Evento and a sample Iniciativa so UI shows the slots
@@ -225,10 +207,10 @@ export default function GameWindow({ onClose }) {
           setPlayerTalents(pt)
           setPlayerEvents([])
         }
-      } catch (err) {
+        } catch (err) {
         console.error('Error loading datacards.xlsx:', err)
-        // fallback: keep existing generated deck
-        setDeck(generateDeckFallback())
+        // fallback: keep deck empty to avoid allocating sample objects
+        setDeck([])
         setPlayerTalents([])
         setPlayerEvents([])
       }
@@ -245,6 +227,23 @@ export default function GameWindow({ onClose }) {
   const [recruitWarn, setRecruitWarn] = useState(false)
   // modal for Evento reveals (simple acknowledge)
   const [eventModalCard, setEventModalCard] = useState(null)
+  // discard pile state + modal
+  const [discardPile, setDiscardPile] = useState([])
+  const [discardModalOpen, setDiscardModalOpen] = useState(false)
+
+  function addToDiscard(card) {
+    if (!card) return
+    // prevent duplicates in discard by id (or name fallback)
+    const key = card.id || card.name || JSON.stringify(card)
+    setDiscardPile(d => {
+      try {
+        if (d && d.some(x => (x && (x.id || x.name)) && (x.id === card.id || x.name === card.name))) return d
+      } catch (e) {
+        // ignore and proceed to add
+      }
+      return [card, ...d]
+    })
+  }
 
   function pushLog(msg) {
     setLog(l => [msg, ...l].slice(0, 8))
@@ -719,8 +718,11 @@ export default function GameWindow({ onClose }) {
       setTable(t => [...t, { ...c, errant: becomesErrant }])
       pushLog(`Personaje ${becomesErrant ? 'errante' : 'aliado'} en mesa`)
     } else if (c.type === 'evento') {
-      // Playing an Evento replaces the player's current event
-      setPlayerEvents([c])
+      // Playing an Evento replaces the player's current event -> move previous to discard
+      setPlayerEvents(prev => {
+        if (prev && prev.length) addToDiscard(prev[0])
+        return [c]
+      })
       pushLog('Evento en juego con el jugador (reemplazado)')
     } else if (c.type === 'talento' || c.type === 'iniciativa') {
       setPlayerTalents(t => [...t, c])
@@ -902,7 +904,11 @@ export default function GameWindow({ onClose }) {
   function handleEventContinue() {
     if (!eventModalCard) return
     try {
-      setPlayerEvents([eventModalCard])
+      // move previous event to discard pile (if any) and apply new event
+      setPlayerEvents(prev => {
+        if (prev && prev.length) addToDiscard(prev[0])
+        return [eventModalCard]
+      })
       pushLog('Evento aplicado: reemplazaste el evento anterior')
     } finally {
       setEventModalCard(null)
@@ -927,7 +933,7 @@ export default function GameWindow({ onClose }) {
           </div>
           <div className="deck-controls">
             <button className="draw-btn" disabled={isShowing || deck.length === 0} title={deck.length === 0 ? 'Mazo vacío' : ''} onClick={() => { closeCardMenu(); showCard() }}>Mostrar</button>
-            <div className="discard">Descartar (0)</div>
+            <button className="deck-discard-btn" onClick={() => { closeCardMenu(); setDiscardModalOpen(true) }} title="Ver cartas descartadas">Cartas descartadas ({discardPile.length})</button>
           </div>
           {/* Extra controls centered beneath the deck-stack */}
           <div className="deck-extra-controls" aria-hidden={false}>
@@ -939,7 +945,7 @@ export default function GameWindow({ onClose }) {
 
       <div className="gw-window">
           <div className="gw-header">
-          <div className="gw-meta">Mazo: <strong>{deck.length}</strong> • Desc.: <strong>{0}</strong></div>
+          <div className="gw-meta">Mazo: <strong>{deck.length}</strong> • Desc.: <strong>{discardPile.length}</strong></div>
           {/* Surrender button - only way to exit the game */}
           <button className="gw-close surrender-btn" onClick={onClose} aria-label="Rendirse">Rendirse</button>
         </div>
@@ -1177,6 +1183,35 @@ export default function GameWindow({ onClose }) {
               <button className="recruit-die" onClick={() => handleEventContinue()} aria-label="Continuar">Continuar</button>
             </div>
           )}
+        </div>
+      </div>
+      {/* Discard pile modal */}
+      <div className={`card-modal-backdrop ${discardModalOpen ? 'show' : ''}`} onClick={() => setDiscardModalOpen(false)} role="dialog" aria-hidden={discardModalOpen ? 'false' : 'true'}>
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          <div style={{ width: 'min(520px, 92vw)', maxHeight: '70vh', overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#eaf5ff' }}>Cartas descartadas</h3>
+              <div style={{ color: '#cfe9f7' }}>{discardPile.length} total</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+              {discardPile.length === 0 ? (
+                <div style={{ color: '#cfe9f7' }}>No hay cartas descartadas</div>
+              ) : discardPile.map((c, i) => (
+                <div key={c.id || i} style={{ background: 'linear-gradient(180deg, rgba(12,20,24,0.06), rgba(10,14,18,0.04))', padding: 8, borderRadius: 8, border: '1px solid rgba(255,255,255,0.03)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ width: 48, height: 68, borderRadius: 6, overflow: 'hidden', background: '#07111a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {c.img ? <img src={c.img} alt={c.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ color: '#eaf5ff', fontSize: 20 }}>🂠</div>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontWeight: 700, color: '#eaf5ff' }}>{c.name || '(sin nombre)'}</div>
+                    <div style={{ fontSize: 12, color: '#cfe9f7' }}>{c.type || ''} {c.risk !== undefined ? `• R:${c.risk}` : ''}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="deck-extra-btn" onClick={() => setDiscardModalOpen(false)}>Cerrar</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
