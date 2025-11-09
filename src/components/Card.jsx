@@ -1,12 +1,18 @@
-import React, { useRef } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import './Card.css'
 
 // Card visual focused on numbers (riesgo / conflicto). No nombres visibles por petición.
-export default function Card({ type = 'personaje', risk = 0, conflict = 0, allied = false, errant = false, onClick, rot = 0, ...rest }) {
+export default function Card({ type = 'personaje', risk = 0, conflict = 0, allied = false, errant = false, onClick, rot = 0, name = '', img = null, ...rest }) {
   const typeClass = type ? String(type).toLowerCase() : ''
   const badge = type === 'personaje' ? 'P' : type === 'evento' ? 'E' : type === 'talento' ? 'T' : type === 'iniciativa' ? 'I' : 'C'
   const innerRef = useRef(null)
   const animatingRef = useRef(false)
+  const [imgError, setImgError] = useState(false)
+
+  useEffect(() => {
+    // reset error if img prop changes
+    setImgError(false)
+  }, [img])
 
   function handleClick(e) {
     // Prevent multiple animations
@@ -53,13 +59,18 @@ export default function Card({ type = 'personaje', risk = 0, conflict = 0, allie
     >
       <div className="card-inner" ref={innerRef}>
         <div className="card-face card-front">
+          {/* full-bleed artwork behind overlays */}
+          {img && !imgError ? (
+            <img src={img} alt={name || ''} className="card-art-img" onError={(e) => { try { setImgError(true) } catch (er) {} }} />
+          ) : (
+            <div className="card-art" aria-hidden="true">{name ? name : '🂠'}</div>
+          )}
+
           <div className="card-badge">{badge}</div>
 
           <div className="card-risk">{risk}</div>
 
           <div className="card-conflict">{conflict}</div>
-
-          <div className="card-art" aria-hidden="true">🂠</div>
         </div>
 
         <div className="card-face card-back" aria-hidden="true">

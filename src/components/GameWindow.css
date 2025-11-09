@@ -83,24 +83,24 @@
 .deck-area { display:flex; flex-direction:column; align-items:center; gap:0.6rem }
 .deck-stack { position:relative }
 .deck-card {
-  width:72px; height:96px; border-radius:8px;
-  display:flex; align-items:center; justify-content:center; font-size:1.6rem;
+  width:60px; height:84px; border-radius:7px;
+  display:flex; align-items:center; justify-content:center; font-size:1.4rem;
   /* reduced shadow for performance */
-  box-shadow:0 8px 18px rgba(6,10,14,0.45);
+  box-shadow:0 6px 14px rgba(6,10,14,0.42);
   position:relative;
-  background: linear-gradient(180deg, rgba(11,60,93,0.95), rgba(10,30,48,0.95));
+  background: linear-gradient(180deg, rgba(11,60,93,0.95), rgba(8,24,40,0.95));
   border: 1px solid rgba(255,255,255,0.03);
 }
-.deck-card::before{ content:''; position:absolute; inset:6px; border-radius:6px; background:linear-gradient(180deg, rgba(6,32,42,0.9), rgba(4,16,24,0.9)); opacity:0.9 }
+.deck-card::before{ content:''; position:absolute; inset:5px; border-radius:6px; background:linear-gradient(180deg, rgba(6,32,42,0.9), rgba(4,16,24,0.9)); opacity:0.9 }
 .deck-count { position:absolute; right:-8px; bottom:-10px; background:linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.9)); color: var(--soft-white); padding:4px 8px; border-radius:10px; font-weight:800; box-shadow: 0 4px 10px rgba(138,7,7,0.12) }
-.deck-stack::before,.deck-stack::after{ content:''; position:absolute; left:6px; top:6px; width:72px; height:96px; border-radius:8px; background: linear-gradient(180deg, rgba(11,60,93,0.9), rgba(6,18,26,0.9)); box-shadow:0 8px 22px rgba(2,6,12,0.45); transform:translate3d(-6px,6px,0); opacity:0.85 }
-.deck-stack::before{ box-shadow:0 6px 12px rgba(2,6,12,0.32) }
-.deck-stack::after{ transform:translate3d(-10px,10px,0); opacity:0.7; box-shadow:0 4px 10px rgba(2,6,12,0.28) }
+.deck-stack::before,.deck-stack::after{ content:''; position:absolute; left:5px; top:5px; width:60px; height:84px; border-radius:7px; background: linear-gradient(180deg, rgba(11,60,93,0.9), rgba(6,18,26,0.9)); box-shadow:0 6px 18px rgba(2,6,12,0.42); transform:translate3d(-5px,5px,0); opacity:0.85 }
+.deck-stack::before{ box-shadow:0 5px 10px rgba(2,6,12,0.32) }
+.deck-stack::after{ transform:translate3d(-8px,8px,0); opacity:0.7; box-shadow:0 3px 8px rgba(2,6,12,0.28) }
 .draw-btn { padding: 0.45rem 0.7rem; border-radius:8px; background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.94)); color: var(--soft-white); border:none; cursor:pointer; font-weight:800; letter-spacing:0.2px }
 .discard { opacity:0.8; font-size:0.9rem }
 .draw-btn[disabled], .draw-btn:disabled { opacity: 0.5; cursor: not-allowed; /* avoid filter: grayscale which triggers repaint */ }
 .deck-hud { display:flex; gap:0.6rem; align-items:center }
-.deck-hud .deck-stack { width:72px }
+.deck-hud .deck-stack { width:60px }
 .deck-hud .deck-controls { display:flex; flex-direction:column; gap:6px; align-items:flex-start }
 .deck-extra-controls { display:flex; gap:8px; flex-direction:column; align-items:center; justify-content:center; margin-left: 6px }
 .deck-extra-btn { padding: 0.4rem 0.7rem; border-radius:8px; background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.94)); color: var(--soft-white); border:none; cursor:pointer; font-weight:700; transition: transform 120ms cubic-bezier(.2,.9,.3,1) }
@@ -112,13 +112,31 @@
 .table-area { background: linear-gradient(180deg, rgba(11,60,93,0.06), rgba(0,0,0,0.06)); border-radius:10px; padding:1.5rem 1.5rem 1rem 1.5rem; min-height:160px; display:flex; align-items:center; justify-content:center; border: 1px solid rgba(255,255,255,0.03) }
 .table-placeholder { color: rgba(250,250,250,0.85) }
 .table-cards { position:relative; display:flex; align-items:flex-start; justify-content:flex-start; gap:1.2rem; flex-wrap:wrap }
-.table-slot { width: 104px; height: 140px; display:inline-block; position:relative; will-change:transform; margin:10px }
+/* Make slots auto-size to their content so landscape (personaje) cards don't overflow
+   or overlap neighbouring slots. We center the card inside each slot and allow the
+   inner .card-root to determine the actual size. */
+.table-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  will-change: transform;
+  margin: 8px;
+  padding: 6px; /* small gutter so larger landscape cards have breathing room */
+}
 .table-slot { perspective: 300px; -webkit-perspective: 300px }
-.table-slot .card-root { transform-origin: center center; width:104px; height:140px }
+.table-slot .card-root { transform-origin: center center; /* allow card-root to determine its own size */ }
+/* allow Personaje cards to be landscape inside slots - sizing comes from Card.css */
+/* no explicit forced size for personaje here; Card.css controls dimensions */
 .table-pan { overflow: hidden; width: 100%; display:flex; flex-direction:column; justify-content:flex-start; align-items:stretch; cursor: grab; flex: 1 1 auto; min-height: 0 }
 .table-pan.grabbing { cursor: grabbing }
-.table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; align-items:flex-start }
-.table-cards { padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04); background: linear-gradient(180deg, rgba(10,14,18,0.02), rgba(8,10,12,0.06)); /* lighter shadows */ box-shadow: inset 0 1px 4px rgba(138,7,7,0.02), 0 6px 18px rgba(6,10,14,0.36); max-height: 360px; overflow: auto }
+.table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; align-items:flex-start; justify-content: center }
+/* Table cards should shrink-wrap to their children so the border follows the cards exactly.
+  Use inline-flex and remove fixed max-height/overflow so the outline is the tight container. */
+/* Limit the board to 5 cards per row. Use grid with 5 columns sized to content
+  so the fifth card doesn't get stretched when a sixth exists. Responsive
+  fallbacks reduce columns on narrow viewports. */
+.table-cards { display: grid; grid-template-columns: repeat(5, max-content); gap: 12px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04); background: linear-gradient(180deg, rgba(12,20,24,0.02), rgba(10,14,18,0.04)); box-shadow: inset 0 1px 4px rgba(255,255,255,0.02), 0 6px 18px rgba(6,10,14,0.36); justify-content: center }
 .table-pan.grabbing .table-pan-inner { transition: none !important }
 
 /* -----------------------------
@@ -127,7 +145,7 @@
 .hand-label { color: rgba(255,255,255,0.85); font-weight:700; margin-left:0.4rem }
 .hand-area { display:flex; gap:0.6rem; align-items:flex-end; padding:0.5rem 0 }
 .hand-slot { display:inline-block; transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms ease; will-change: transform; transform-origin: center bottom; transform-style: preserve-3d }
-.hand-slot + .hand-slot { margin-left: -56px }
+.hand-slot + .hand-slot { margin-left: -44px }
 .hand-slot .card-root { transform-origin: center center; backface-visibility: hidden }
 .hand-slot:hover { z-index: 9999 }
 
@@ -154,7 +172,7 @@
 .team-bar .hand-area::-webkit-scrollbar { height: 10px }
 .team-bar .hand-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 8px }
 .team-bar .hand-area .hand-slot { flex: 0 0 auto }
-.team-bar .hand-slot + .hand-slot { margin-left: -36px }
+.team-bar .hand-slot + .hand-slot { margin-left: -28px }
 .team-bar .hand-area { cursor: grab }
 .team-bar .hand-area.dragging { cursor: grabbing }
 
@@ -226,10 +244,17 @@
 .card-modal-backdrop.show { opacity: 1; pointer-events: auto }
 .card-modal-content { transform: scale(0.92); transition: transform 240ms cubic-bezier(.2,.9,.2,1), opacity 240ms ease; opacity: 0; will-change: transform, opacity }
 .card-modal-backdrop.show .card-modal-content { transform: scale(1); opacity: 1 }
-.card-modal-content .card-root { transform-origin: center center; transform: none; box-shadow: 0 30px 80px rgba(0,0,0,0.7) }
-.card-modal-content .card-root { width: 220px !important; height: 310px !important }
+.card-modal-content .card-root { transform-origin: center center; transform: none; box-shadow: 0 30px 80px rgba(0,0,0,0.7); width: min(420px, 78vw) !important; height: auto !important; max-height: 86vh; }
+.card-modal-content .card-root.personaje { width: min(560px, 86vw) !important; height: auto !important; max-height: 86vh }
 .card-modal-content .card-risk { font-size: 4rem !important }
 .card-modal-content .card-conflict { font-size: 1.6rem !important }
+
+/* Modal: allow inner to size to artwork and keep aspect via contain */
+.card-modal-content .card-root .card-inner { height: auto !important; display: block }
+.card-modal-content .card-art-img { width: 100% !important; height: auto !important; object-fit: contain; max-height: calc(86vh - 48px); }
+/* make front face and image flow normally inside modal (not absolutely positioned) */
+.card-modal-content .card-face.card-front { position: relative !important }
+.card-modal-content .card-art-img { position: static !important; inset: auto !important; z-index: 1 }
 
 .recruit-die { background: linear-gradient(180deg, rgba(11,60,93,0.95), rgba(6,12,16,0.95)); color: var(--soft-white); border: 1px solid rgba(255,255,255,0.06); padding: 8px 14px; border-radius: 8px; font-size: 1.25rem; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.5) }
 .recruit-die[disabled] { opacity: 0.7; cursor: default }
@@ -271,8 +296,10 @@
   .floating-controls button { padding: 0.6rem 0.85rem; font-size: 0.95rem }
 
   /* Deck/card sizes */
-  .deck-card { width: 56px; height: 76px; font-size: 1.2rem }
-  .table-slot { width: 100px; height: 140px }
+  .deck-card { width: 48px; height: 68px; font-size: 1.0rem }
+  .table-slot { width: 84px; height: 120px }
+  /* mobile: ensure personaje cards scale down to fit horizontally when needed */
+  .table-slot .card-root.personaje { width: 120px; height: 84px }
 
   /* HUD compact */
   .gw-overlay-stats { left: 0.8rem; top: auto; bottom: 96px; flex-direction: row; gap: 0.5rem }

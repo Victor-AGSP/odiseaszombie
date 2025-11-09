@@ -1,46 +1,46 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './GameWindow.css'
 import Card from './Card.jsx'
+import * as XLSX from 'xlsx'
 
 // Generate a 30-card sample deck (no visible names). Mix types and stats for variety.
-function generateDeck() {
-  // Only personaje (P) and evento (E) can appear in the deck per request
-  // Weight towards more personajes so cards show varied numbers (few zeros)
-  const types = ['personaje','personaje','personaje','evento'] // ~75% personaje, 25% evento
+// Helper to normalize filename: lowercase, remove diacritics and non-alphanumerics
+function normalizeFileName(name = '') {
+  // Remove accents/diacritics using NFD decomposition and range of combining marks
+  const noDiacritics = name.normalize ? name.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : name
+  // Lowercase, replace spaces with '_' and remove characters that could break filenames
+  return noDiacritics.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_\-]/g, '')
+}
+
+// Fallback sample generator if XLSX load fails
+function generateDeckFallback() {
+  const types = ['personaje','personaje','personaje','evento']
   const deck = []
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 30; i++) {
     const type = types[Math.floor(Math.random() * types.length)]
-    // Make the numbers more varied.
-    // Personaje: risk in range [-2, 4], conflict in range [1,5]
-    // Evento: small modifiers, give risk in [-1,2] and conflict 0
     let risk = 0
     let conflict = 0
     if (type === 'personaje') {
-      risk = Math.floor(Math.random() * 7) - 2 // -2..4
-      conflict = Math.floor(Math.random() * 5) + 1 // 1..5
+      risk = Math.floor(Math.random() * 7) - 2
+      conflict = Math.floor(Math.random() * 5) + 1
     } else {
-      risk = Math.floor(Math.random() * 4) - 1 // -1..2
+      risk = Math.floor(Math.random() * 4) - 1
       conflict = 0
     }
-    deck.push({ type, risk, conflict })
+    deck.push({ id: `f-${i}`, name: `sample-${i}`, type, risk, conflict, img: null })
   }
   return deck
 }
-const sampleDeck = generateDeck()
 
 export default function GameWindow({ onClose }) {
   // Initialize deck and hand without mutating the same array
-  const initialDeck = sampleDeck.slice()
-  // start with 5 cards in hand instead of 3
-  const [deck, setDeck] = useState(initialDeck.slice(5))
-  const [hand, setHand] = useState(initialDeck.slice(0, 5))
+  // Player starts with no cards in the team/hand; only Talento, Evento and Iniciativa are present
+  const [deck, setDeck] = useState(() => generateDeckFallback())
+  const [hand, setHand] = useState([])
   const [table, setTable] = useState([])
   // start with a sample Evento and a sample Iniciativa so UI shows the slots
-  const [playerEvents, setPlayerEvents] = useState([{ type: 'evento', risk: 0, conflict: 0 }])
-  const [playerTalents, setPlayerTalents] = useState([
-    { type: 'talento', risk: 0, conflict: 0 },
-    { type: 'iniciativa', risk: 0, conflict: 0 }
-  ])
+  const [playerEvents, setPlayerEvents] = useState([])
+  const [playerTalents, setPlayerTalents] = useState([])
   // derive a single talento card (if any) for the team slot
   const talentoCard = (playerTalents && playerTalents.find && playerTalents.find(p => p.type === 'talento')) || null
   const iniciativaCard = (playerTalents && playerTalents.find && playerTalents.find(p => p.type === 'iniciativa')) || null
@@ -75,6 +75,166 @@ export default function GameWindow({ onClose }) {
       if (mq.removeEventListener) mq.removeEventListener('change', handler)
       else mq.removeListener(handler)
     }
+  }, [])
+
+  // Load cards from public/datacards.xlsx and build deck + player slots
+  useEffect(() => {
+    let cancelled = false
+    async function loadExcel() {
+      try {
+        const resp = await fetch('/datacards.xlsx')
+        if (!resp.ok) throw new Error('No se pudo leer datacards.xlsx')
+        const ab = await resp.arrayBuffer()
+        const wb = XLSX.read(new Uint8Array(ab), { type: 'array' })
+        const firstSheet = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' })
+
+        const personajes = []
+        const eventos = []
+        const talentos = []
+        const iniciativas = []
+
+        // small helper to test for image existence by trying candidate paths
+        async function findExistingImage(baseName) {
+          const candidates = []
+          const n1 = normalizeFileName(baseName)
+          // also try a diacritics-removed version but preserving spaces (some files use spaces)
+          const baseNoDiacritics = baseName && baseName.normalize ? baseName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : baseName.toLowerCase()
+          const variants = [
+            n1, // normalized (underscores)
+            n1.replace(/_/g, '-'),
+            n1.replace(/_/g, ''),
+            baseName.toLowerCase().replace(/\s+/g, '_'),
+            baseNoDiacritics, // preserves spaces
+            encodeURIComponent(baseNoDiacritics) // URL-encoded (spaces -> %20)
+          ]
+          const exts = ['bmp', 'png', 'jpg', 'jpeg']
+          const prefixes = ['', '/images']
+          for (const p of prefixes) {
+            for (const v of variants) {
+              for (const e of exts) {
+                candidates.push(`${p}/${v}.${e}`)
+              }
+            }
+          }
+          // try candidates in order and return first that responds OK
+          for (let c of candidates) {
+            try {
+              // Try to actually load the image via an Image object so we know the browser can decode it
+              const ok = await new Promise((resolve) => {
+                const img = new Image()
+                img.onload = () => resolve(true)
+                img.onerror = () => resolve(false)
+                img.src = c
+              })
+              if (ok) return c
+            } catch (e) {
+              // ignore and try next candidate
+            }
+          }
+          // nothing found
+          console.debug('findExistingImage: no candidate matched for', baseName, 'tried candidates:', candidates)
+          return null
+        }
+
+        const imgPromises = []
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i]
+          // support both header names 'Nombre','Tipo','Json' or lowercased
+          const nombre = row.Nombre || row.nombre || row.Name || row.name || ''
+          const tipoRaw = row.Tipo || row.tipo || row.Type || row.type || ''
+          const jsonRaw = row.Json || row.json || ''
+          const tipo = String(tipoRaw).trim().toLowerCase()
+          const id = `r-${i}`
+          // Attempt to resolve an existing bmp path. We'll try several candidate patterns.
+          const candidateBase = String(nombre || '')
+          // findExistingImage is async; for now set placeholder and resolve below
+          let img = null
+          // parse JSON details if present
+          let parsed = {}
+          try { parsed = jsonRaw ? (typeof jsonRaw === 'object' ? jsonRaw : JSON.parse(String(jsonRaw))) : {} } catch (e) { parsed = {} }
+
+          const card = {
+            id,
+            name: nombre,
+            type: tipo.startsWith('p') || tipo === 'personaje' ? 'personaje' : tipo.startsWith('e') || tipo === 'evento' ? 'evento' : tipo.startsWith('t') || tipo === 'talento' ? 'talento' : tipo.startsWith('i') || tipo === 'iniciativa' ? 'iniciativa' : 'otro',
+            img,
+            // map JSON fields: Amenaza => risk, Conflicto => conflict
+            risk: parsed && (parsed.Amenaza !== undefined ? Number(parsed.Amenaza) : parsed.Amenaza) || (parsed.Amenaza === 0 ? 0 : (parsed.amenaza !== undefined ? Number(parsed.amenaza) : 0)),
+            conflict: parsed && (parsed.Conflicto !== undefined ? Number(parsed.Conflicto) : parsed.Conflicto) || (parsed.Conflicto === 0 ? 0 : (parsed.conflicto !== undefined ? Number(parsed.conflicto) : 0))
+          }
+
+          if (card.type === 'personaje') personajes.push(card)
+          else if (card.type === 'evento') eventos.push(card)
+          else if (card.type === 'talento') talentos.push(card)
+          else if (card.type === 'iniciativa') iniciativas.push(card)
+          // enqueue promise to resolve image path for this card
+          imgPromises.push(
+            (async () => {
+              try {
+                const found = await findExistingImage(candidateBase)
+                return { id: card.id, found }
+              } catch (e) {
+                return { id: card.id, found: null }
+              }
+            })()
+          )
+        }
+        // await image resolution for all rows before constructing deck/state so React sees imgs
+        const imgsResolved = await Promise.all(imgPromises)
+        // apply found images to cards
+        for (const r of imgsResolved) {
+          if (!r || !r.id) continue
+          const allLists = [personajes, eventos, talentos, iniciativas]
+          for (const list of allLists) {
+            const c = list.find(x => x.id === r.id)
+            if (c) {
+              if (r.found) c.img = r.found
+              else console.warn(`Carta sin imagen encontrada para: ${c.name} (buscado como .bmp)`)
+              break
+            }
+          }
+        }
+
+        // If any card still lacks an img, try the exact normalized path (user said images follow this naming)
+        const allLists2 = [personajes, eventos, talentos, iniciativas]
+        for (const list of allLists2) {
+          for (const c of list) {
+            if (!c.img && c.name) {
+              const candidate = `/${normalizeFileName(c.name)}.bmp`
+              c.img = candidate
+            }
+          }
+        }
+
+        // Build deck: only personajes and eventos, then shuffle
+        let newDeck = [...personajes, ...eventos]
+        for (let i = newDeck.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]]
+        }
+
+        if (!cancelled) {
+          if (newDeck.length > 0) setDeck(newDeck)
+          // remove any Evento from player's slot and instead give one talento + one iniciativa randomly
+          const chosenTalento = talentos.length ? talentos[Math.floor(Math.random() * talentos.length)] : null
+          const chosenIniciativa = iniciativas.length ? iniciativas[Math.floor(Math.random() * iniciativas.length)] : null
+          const pt = []
+          if (chosenTalento) pt.push(chosenTalento)
+          if (chosenIniciativa) pt.push(chosenIniciativa)
+          setPlayerTalents(pt)
+          setPlayerEvents([])
+        }
+      } catch (err) {
+        console.error('Error loading datacards.xlsx:', err)
+        // fallback: keep existing generated deck
+        setDeck(generateDeckFallback())
+        setPlayerTalents([])
+        setPlayerEvents([])
+      }
+    }
+    loadExcel()
+    return () => { cancelled = true }
   }, [])
   // recruit modal state: when a Personaje is revealed, show this modal and let user roll a die
   const [recruitCard, setRecruitCard] = useState(null)
@@ -258,16 +418,24 @@ export default function GameWindow({ onClose }) {
   clone.innerHTML = ''
   clone.classList.add('revealed-clone')
   const front = document.createElement('div')
-  front.style.width = '120px'
-  front.style.height = '170px'
-  front.style.display = 'flex'
-  front.style.flexDirection = 'column'
-  front.style.alignItems = 'center'
-  front.style.justifyContent = 'center'
+  front.style.width = `${rect.width}px`
+  front.style.height = `${rect.height}px`
+  front.style.display = 'block'
   front.style.borderRadius = '10px'
-  front.style.background = 'linear-gradient(180deg,#0f1315,#061013)'
-  front.style.color = '#e6eef6'
-  front.innerHTML = `<div style="font-weight:800;font-size:28px;color:#ffe9b3;margin-bottom:8px">${topRef.current.risk}</div><div style="font-size:14px;color:#ffb0b0">${topRef.current.conflict}</div>`
+  front.style.overflow = 'hidden'
+  // If the card has an artwork image, show it full-bleed; otherwise use a neutral gradient
+  if (topRef.current && topRef.current.img) {
+    const art = document.createElement('img')
+    art.src = topRef.current.img
+    art.alt = topRef.current.name || ''
+    art.style.width = '100%'
+    art.style.height = '100%'
+    art.style.objectFit = 'cover'
+    art.style.display = 'block'
+    front.appendChild(art)
+  } else {
+    front.style.background = 'linear-gradient(180deg,#0f1315,#061013)'
+  }
   clone.appendChild(front)
 
       // finish flip to show front
@@ -477,7 +645,14 @@ export default function GameWindow({ onClose }) {
   useEffect(() => {
     function stopEsc(e) {
       if (e.key === 'Escape') {
-        // stop propagation so parent components won't interpret Esc as exit
+        // If a preview modal is open, close it and prevent outer handlers
+        if (previewCard) {
+          try { closePreview() } catch (er) {}
+          e.stopPropagation && e.stopPropagation()
+          e.preventDefault && e.preventDefault()
+          return
+        }
+        // otherwise prevent Escape from bubbling to parent components
         e.stopPropagation && e.stopPropagation()
         e.preventDefault && e.preventDefault()
       }
@@ -485,7 +660,7 @@ export default function GameWindow({ onClose }) {
     // use capture phase to intercept before other listeners
     window.addEventListener('keydown', stopEsc, true)
     return () => window.removeEventListener('keydown', stopEsc, true)
-  }, [])
+  }, [previewCard])
 
   function startPan(e) {
     e.stopPropagation && e.stopPropagation()
@@ -783,6 +958,8 @@ export default function GameWindow({ onClose }) {
                           conflict={c.conflict}
                           allied={!c.errant}
                           errant={c.errant}
+                          name={c.name}
+                          img={c.img}
                           rot={0}
                           onClick={(e) => { if (panIgnoreClickRef.current) { e.stopPropagation(); return } openPreview(c, e) }}
                         />
@@ -841,6 +1018,8 @@ export default function GameWindow({ onClose }) {
                     type={c.type}
                     risk={c.risk}
                     conflict={c.conflict}
+                    name={c.name}
+                    img={c.img}
                     rot={0}
                     onClick={(e) => { if (ignoreClickRef.current) { e.stopPropagation(); return } e.stopPropagation(); openPreview(c, e) }}
                     onContextMenu={(e) => { openCardMenu(c, e, i) }}
@@ -878,7 +1057,7 @@ export default function GameWindow({ onClose }) {
                         <div className="side-slot-body" style={{ transform: `translateX(${sideTranslate}px)` }}>
                           {current ? (
                             <div onContextMenu={(e) => { openCardMenu(current, e, null) }}>
-                              <Card type={current.type} risk={current.risk} conflict={current.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(current, e) }} onContextMenu={(e) => { openCardMenu(current, e, null) }} />
+                              <Card name={current.name} img={current.img} type={current.type} risk={current.risk} conflict={current.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(current, e) }} onContextMenu={(e) => { openCardMenu(current, e, null) }} />
                             </div>
                           ) : (
                             <div className="empty-slot">—</div>
@@ -899,7 +1078,7 @@ export default function GameWindow({ onClose }) {
                     <div className="slot-body">
                       {playerEvents[0] ? (
                         <div onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }}>
-                          <Card type={playerEvents[0].type} risk={playerEvents[0].risk} conflict={playerEvents[0].conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(playerEvents[0], e) }} onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }} />
+                          <Card name={playerEvents[0].name} img={playerEvents[0].img} type={playerEvents[0].type} risk={playerEvents[0].risk} conflict={playerEvents[0].conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(playerEvents[0], e) }} onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }} />
                         </div>
                       ) : <div className="empty-slot">—</div>}
                     </div>
@@ -910,7 +1089,7 @@ export default function GameWindow({ onClose }) {
                     <div className="slot-body">
                       {talentoCard ? (
                         <div onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }}>
-                          <Card type={talentoCard.type} risk={talentoCard.risk} conflict={talentoCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(talentoCard, e) }} onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }} />
+                          <Card name={talentoCard.name} img={talentoCard.img} type={talentoCard.type} risk={talentoCard.risk} conflict={talentoCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(talentoCard, e) }} onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }} />
                         </div>
                       ) : <div className="empty-slot">—</div>}
                     </div>
@@ -921,7 +1100,7 @@ export default function GameWindow({ onClose }) {
                     <div className="slot-body">
                       {iniciativaCard ? (
                         <div onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }}>
-                          <Card type={iniciativaCard.type} risk={iniciativaCard.risk} conflict={iniciativaCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(iniciativaCard, e) }} onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }} />
+                          <Card name={iniciativaCard.name} img={iniciativaCard.img} type={iniciativaCard.type} risk={iniciativaCard.risk} conflict={iniciativaCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(iniciativaCard, e) }} onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }} />
                         </div>
                       ) : <div className="empty-slot">—</div>}
                     </div>
@@ -954,7 +1133,7 @@ export default function GameWindow({ onClose }) {
         <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
           {previewCard && (
             <div>
-              <Card type={previewCard.type} risk={previewCard.risk} conflict={previewCard.conflict} rot={0} />
+              <Card name={previewCard.name} img={previewCard.img} type={previewCard.type} risk={previewCard.risk} conflict={previewCard.conflict} rot={0} />
             </div>
           )}
         </div>
@@ -973,7 +1152,7 @@ export default function GameWindow({ onClose }) {
             <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
           {recruitCard && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-              <Card type={recruitCard.type} risk={recruitCard.risk} conflict={recruitCard.conflict} rot={0} />
+              <Card name={recruitCard.name} img={recruitCard.img} type={recruitCard.type} risk={recruitCard.risk} conflict={recruitCard.conflict} rot={0} />
                   <button
                     className={`recruit-die ${recruitWarn ? 'shake-red' : ''}`}
                     onClick={() => handleRecruitRoll()}
@@ -994,7 +1173,7 @@ export default function GameWindow({ onClose }) {
         <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
           {eventModalCard && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-              <Card type={eventModalCard.type} risk={eventModalCard.risk} conflict={eventModalCard.conflict} rot={0} />
+              <Card name={eventModalCard.name} img={eventModalCard.img} type={eventModalCard.type} risk={eventModalCard.risk} conflict={eventModalCard.conflict} rot={0} />
               <button className="recruit-die" onClick={() => handleEventContinue()} aria-label="Continuar">Continuar</button>
             </div>
           )}
