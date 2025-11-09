@@ -774,46 +774,8 @@ export default function GameWindow({ onClose }) {
 
   function rollDice() { return Math.floor(Math.random() * 6) + 1 }
 
-  // Paso de decisión: si hay personajes errantes en mesa, se resuelve el primero
-  function pasoDecision() {
-    const errants = table.filter(c => c.type === 'personaje' && c.errant)
-    if (errants.length === 0) { pushLog('No hay personajes errantes') ; return }
-    const p = errants[0]
-    const r = rollDice()
-    pushLog(`Decisión: tiraste ${r}`)
-    if (p.conflict && r >= p.conflict) {
-      // resuelto: personaje vuelve a la baraja
-      setTable(t => t.filter(x => x !== p))
-      setDeck(d => [p, ...d])
-      pushLog('Conflicto resuelto: personaje retirado a la baraja')
-    } else if (r < p.conflict) {
-      setZombies(z => z + r)
-      pushLog(`Conflicto fallido: se agregaron ${r} zombies`) 
-    }
-  }
-
-  // Paso de riesgo: todos los jugadores (simplificado: 1) tiran y suman
-  function pasoRiesgo() {
-    const r = rollDice()
-    // aliados suman su risk positivo
-    const allies = table.filter(c => c.type === 'personaje' && !c.errant)
-    const alliesSum = allies.reduce((s, c) => s + (c.risk || 0), 0)
-    const add = r + alliesSum
-    setZombies(z => z + add)
-    pushLog(`Riesgo: tiraste ${r} + aliados ${alliesSum} => +${add} zombies`)
-  }
-
-  // Paso de defensa: cada jugador tira para reducir amenaza (simplificado: 1 jugador)
-  function pasoDefensa() {
-    const r = rollDice()
-    setZombies(z => Math.max(0, z - r))
-    pushLog(`Defensa: tiraste ${r} => -${r} zombies`) 
-  }
-
-  function endDay() {
-    setDays(d => d + 1)
-    pushLog('Final del día: contadores actualizados')
-  }
+  // (Removed game-phase helper functions: pasoDecision, pasoRiesgo, pasoDefensa, endDay)
+  // These controls and their logic were removed per request to simplify the UI.
 
   // Reset pan/zoom to initial state and clear any pressed/hover visuals
   function resetView() {
@@ -981,145 +943,101 @@ export default function GameWindow({ onClose }) {
         </div>
 
         {/* Floating controls top-right */}
-        <div className="floating-controls">
-            <button onClick={() => { closeCardMenu(); pasoDecision() }}>Paso de decisión</button>
-            <button onClick={() => { closeCardMenu(); pasoRiesgo() }}>Riesgo</button>
-            <button onClick={() => { closeCardMenu(); pasoDefensa() }}>Defensa</button>
-            <button onClick={() => { closeCardMenu(); endDay() }}>Final día</button>
-          </div>
-
-        {teamVisible && (
-          <div className="team-bar" role="region" aria-label="Barra del equipo">
-            <div className="team-sections">
-            <div className="team-equipo">
-              <div className="hand-label">Equipo</div>
-              <div className="hand-area" ref={handRef}>
-                {hand.map((c, i) => {
-              // Behavior: move only cards that are on top of the hovered card (i > hoveredIndex).
-              // Use translate3d for GPU acceleration and remove stagger so the right-side cards
-              // move as a group (no individual delays). Hovered card lifts and scales.
-              let tx = 0
-              let ty = 0
-              let scale = 1
-              const gap = 80
-              if (hoveredIndex !== null) {
-                // Move all cards to the right of the hovered card by the same amount (group move)
-                if (i > hoveredIndex) tx = gap
-                // Do NOT lift the hovered card; only shift the other cards sideways
-                // (keeps hovered card visually stable so animations are easier to follow)
-              }
-              const style = {
-                transform: `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`,
-                zIndex: i === hoveredIndex ? 9999 : 200 + i
-              }
-                return (
-                <div
-                  className="hand-slot"
-                  key={i}
-                  style={style}
-                  onMouseEnter={() => setHoveredIndex(i)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                >
-                  <Card
-                    type={c.type}
-                    risk={c.risk}
-                    conflict={c.conflict}
-                    name={c.name}
-                    img={c.img}
-                    rot={0}
-                    onClick={(e) => { if (ignoreClickRef.current) { e.stopPropagation(); return } e.stopPropagation(); openPreview(c, e) }}
-                    onContextMenu={(e) => { openCardMenu(c, e, i) }}
-                  />
-                </div>
-              )
-              })}
-                </div>
-              </div>
-
-            <div className="team-side-slots">
-              {isMobileView ? (
-                // Mobile: single swipeable slot (touch only)
-                <div
-                  className="team-side-swiper"
-                  onTouchStart={(e) => { sideTouchStartRef.current = e.touches[0].clientX; sideTouchDeltaRef.current = 0 }}
-                  onTouchMove={(e) => { if (sideTouchStartRef.current == null) return; const dx = e.touches[0].clientX - sideTouchStartRef.current; sideTouchDeltaRef.current = dx; setSideTranslate(dx); e.preventDefault && e.preventDefault() }}
-                  onTouchEnd={() => {
-                    const dx = sideTouchDeltaRef.current || 0
-                    sideTouchStartRef.current = null
-                    sideTouchDeltaRef.current = 0
-                    setSideTranslate(0)
-                    const threshold = 40
-                    if (dx > threshold) setSideIndex(i => Math.max(0, i - 1))
-                    else if (dx < -threshold) setSideIndex(i => Math.min(2, i + 1))
-                  }}
-                >
-                  {(() => {
-                    const sideCards = [playerEvents[0] || null, talentoCard || null, iniciativaCard || null]
-                    const sideLabels = ['Evento', 'Talento', 'Iniciativa']
-                    const current = sideCards[sideIndex]
-                    return (
-                      <div className="side-slot-viewport">
-                        <div className="side-slot-label">{sideLabels[sideIndex]}</div>
-                        <div className="side-slot-body" style={{ transform: `translateX(${sideTranslate}px)` }}>
-                          {current ? (
-                            <div onContextMenu={(e) => { openCardMenu(current, e, null) }}>
-                              <Card name={current.name} img={current.img} type={current.type} risk={current.risk} conflict={current.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(current, e) }} onContextMenu={(e) => { openCardMenu(current, e, null) }} />
-                            </div>
-                          ) : (
-                            <div className="empty-slot">—</div>
-                          )}
-                        </div>
-                        <div className="side-dots">
-                          {[0,1,2].map(i => <span key={i} className={`dot ${i === sideIndex ? 'active' : ''}`} />)}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              ) : (
-                // Desktop / large screens: show the three separate slots as before
-                <>
-                  <div className="team-slot team-evento">
-                    <div className="slot-label">Evento</div>
-                    <div className="slot-body">
-                      {playerEvents[0] ? (
-                        <div onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }}>
-                          <Card name={playerEvents[0].name} img={playerEvents[0].img} type={playerEvents[0].type} risk={playerEvents[0].risk} conflict={playerEvents[0].conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(playerEvents[0], e) }} onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }} />
-                        </div>
-                      ) : <div className="empty-slot">—</div>}
-                    </div>
-                  </div>
-
-                  <div className="team-slot team-talento">
-                    <div className="slot-label">Talento</div>
-                    <div className="slot-body">
-                      {talentoCard ? (
-                        <div onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }}>
-                          <Card name={talentoCard.name} img={talentoCard.img} type={talentoCard.type} risk={talentoCard.risk} conflict={talentoCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(talentoCard, e) }} onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }} />
-                        </div>
-                      ) : <div className="empty-slot">—</div>}
-                    </div>
-                  </div>
-
-                  <div className="team-slot team-iniciativa">
-                    <div className="slot-label">Iniciativa</div>
-                    <div className="slot-body">
-                      {iniciativaCard ? (
-                        <div onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }}>
-                          <Card name={iniciativaCard.name} img={iniciativaCard.img} type={iniciativaCard.type} risk={iniciativaCard.risk} conflict={iniciativaCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(iniciativaCard, e) }} onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }} />
-                        </div>
-                      ) : <div className="empty-slot">—</div>}
-                    </div>
-                  </div>
-                </>) }
-                {/* Card preview modal */}
-            </div>
-            </div>
-          </div>
-        )}
+        {/* Floating controls removed: Paso de decisión / Riesgo / Defensa / Final día */}
 
   {/* footer removed: only surrender button in header remains to exit */}
       </div>
+
+      {/* Team bar moved outside the main game window so it can be positioned independently */}
+      {teamVisible && (
+        <div className="team-bar" role="region" aria-label="Barra del equipo">
+          <div className="team-sections">
+          <div className="team-equipo">
+            <div className="hand-label">Equipo</div>
+            <div className="hand-area" ref={handRef}>
+              {hand.map((c, i) => {
+            let tx = 0
+            let ty = 0
+            let scale = 1
+            const gap = 80
+            if (hoveredIndex !== null) {
+              if (i > hoveredIndex) tx = gap
+            }
+            const style = { transform: `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`, zIndex: i === hoveredIndex ? 9999 : 200 + i }
+              return (
+              <div className="hand-slot" key={i} style={style} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)}>
+                <Card type={c.type} risk={c.risk} conflict={c.conflict} name={c.name} img={c.img} rot={0}
+                  onClick={(e) => { if (ignoreClickRef.current) { e.stopPropagation(); return } e.stopPropagation(); openPreview(c, e) }}
+                  onContextMenu={(e) => { openCardMenu(c, e, i) }} />
+              </div>
+            )
+            })}
+              </div>
+            </div>
+
+          <div className="team-side-slots">
+            {isMobileView ? (
+              <div className="team-side-swiper" onTouchStart={(e) => { sideTouchStartRef.current = e.touches[0].clientX; sideTouchDeltaRef.current = 0 }} onTouchMove={(e) => { if (sideTouchStartRef.current == null) return; const dx = e.touches[0].clientX - sideTouchStartRef.current; sideTouchDeltaRef.current = dx; setSideTranslate(dx); e.preventDefault && e.preventDefault() }} onTouchEnd={() => { const dx = sideTouchDeltaRef.current || 0; sideTouchStartRef.current = null; sideTouchDeltaRef.current = 0; setSideTranslate(0); const threshold = 40; if (dx > threshold) setSideIndex(i => Math.max(0, i - 1)); else if (dx < -threshold) setSideIndex(i => Math.min(2, i + 1)); }}>
+                {(() => {
+                  const sideCards = [playerEvents[0] || null, talentoCard || null, iniciativaCard || null]
+                  const sideLabels = ['Evento', 'Talento', 'Iniciativa']
+                  const current = sideCards[sideIndex]
+                  return (
+                    <div className="side-slot-viewport">
+                      <div className="side-slot-label">{sideLabels[sideIndex]}</div>
+                      <div className="side-slot-body" style={{ transform: `translateX(${sideTranslate}px)` }}>
+                        {current ? (
+                          <div onContextMenu={(e) => { openCardMenu(current, e, null) }}>
+                            <Card name={current.name} img={current.img} type={current.type} risk={current.risk} conflict={current.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(current, e) }} onContextMenu={(e) => { openCardMenu(current, e, null) }} />
+                          </div>
+                        ) : (
+                          <div className="empty-slot">—</div>
+                        )}
+                      </div>
+                      <div className="side-dots">{[0,1,2].map(i => <span key={i} className={`dot ${i === sideIndex ? 'active' : ''}`} />)}</div>
+                    </div>
+                  )
+                })()}
+              </div>
+            ) : (
+              <>
+                <div className="team-slot team-evento">
+                  <div className="slot-label">Evento</div>
+                  <div className="slot-body">
+                    {playerEvents[0] ? (
+                      <div onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }}>
+                        <Card name={playerEvents[0].name} img={playerEvents[0].img} type={playerEvents[0].type} risk={playerEvents[0].risk} conflict={playerEvents[0].conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(playerEvents[0], e) }} onContextMenu={(e) => { openCardMenu(playerEvents[0], e, null) }} />
+                      </div>
+                    ) : <div className="empty-slot">—</div>}
+                  </div>
+                </div>
+
+                <div className="team-slot team-talento">
+                  <div className="slot-label">Talento</div>
+                  <div className="slot-body">
+                    {talentoCard ? (
+                      <div onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }}>
+                        <Card name={talentoCard.name} img={talentoCard.img} type={talentoCard.type} risk={talentoCard.risk} conflict={talentoCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(talentoCard, e) }} onContextMenu={(e) => { openCardMenu(talentoCard, e, null) }} />
+                      </div>
+                    ) : <div className="empty-slot">—</div>}
+                  </div>
+                </div>
+
+                <div className="team-slot team-iniciativa">
+                  <div className="slot-label">Iniciativa</div>
+                  <div className="slot-body">
+                    {iniciativaCard ? (
+                      <div onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }}>
+                        <Card name={iniciativaCard.name} img={iniciativaCard.img} type={iniciativaCard.type} risk={iniciativaCard.risk} conflict={iniciativaCard.conflict} rot={0} onClick={(e) => { e.stopPropagation(); openPreview(iniciativaCard, e) }} onContextMenu={(e) => { openCardMenu(iniciativaCard, e, null) }} />
+                      </div>
+                    ) : <div className="empty-slot">—</div>}
+                  </div>
+                </div>
+              </>) }
+          </div>
+          </div>
+        </div>
+      )}
       {menuCard && (
         <div
           className="card-menu"
