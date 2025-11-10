@@ -677,11 +677,13 @@ export default function GameWindow({ onClose }) {
     if (isMobileView) return
     // Prevent page scroll when zooming
     e.preventDefault && e.preventDefault()
-    const step = 0.0018
+    // slightly larger step for a more responsive zoom feel
+    const step = 0.0025
     // invert so wheel up zooms in
     const delta = -e.deltaY
     let next = zoom + delta * step
-    next = Math.max(0.6, Math.min(1.8, next))
+    // widen allowed zoom range: allow farther out and closer in
+    next = Math.max(0.4, Math.min(3.0, next))
     if (Math.abs(next - zoom) < 0.0001) return
     setZoom(next)
   }
@@ -717,6 +719,8 @@ export default function GameWindow({ onClose }) {
       const becomesErrant = Math.random() < 0.35
       setTable(t => [...t, { ...c, errant: becomesErrant }])
       pushLog(`Personaje ${becomesErrant ? 'errante' : 'aliado'} en mesa`)
+      // recenter view so newly added cards appear centered
+      setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
     } else if (c.type === 'evento') {
       // Playing an Evento replaces the player's current event -> move previous to discard
       setPlayerEvents(prev => {
@@ -724,12 +728,16 @@ export default function GameWindow({ onClose }) {
         return [c]
       })
       pushLog('Evento en juego con el jugador (reemplazado)')
+      // recenter if event affects table layout
+      setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
     } else if (c.type === 'talento' || c.type === 'iniciativa') {
       setPlayerTalents(t => [...t, c])
       pushLog('Talento asignado')
+      setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
     } else {
       setTable(t => [...t, c])
       pushLog('Carta jugada en mesa')
+      setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
     }
   }
 
@@ -905,12 +913,10 @@ export default function GameWindow({ onClose }) {
         </div>
       </div>
 
+      {/* Surrender button moved to top-right of the overlay for easier access */}
+      <button className="surrender-global-btn" onClick={onClose} aria-label="Rendirse">Rendirse</button>
+
       <div className="gw-window">
-          <div className="gw-header">
-          <div className="gw-meta">Mazo: <strong>{deck.length}</strong> • Desc.: <strong>{discardPile.length}</strong></div>
-          {/* Surrender button - only way to exit the game */}
-          <button className="gw-close surrender-btn" onClick={onClose} aria-label="Rendirse">Rendirse</button>
-        </div>
 
         <div className="gw-board">
           <div className="table-column">

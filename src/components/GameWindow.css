@@ -32,8 +32,10 @@
 .gw-window {
   position: relative;
   width: 100%;
-  max-width: 1100px;
-  height: 80vh;
+  /* aumentar el max-width para dar más espacio horizontal al centro (tablero) */
+  max-width: 1400px;
+  /* make the game window taller so the board has more vertical room */
+  height: 88vh;
   background: linear-gradient(180deg, rgba(11,60,93,0.98) 0%, rgba(10,44,72,0.95) 40%, rgba(12,18,22,0.85) 100%);
   border-radius: 12px;
   border: 1px solid rgba(138,7,7,0.04);
@@ -42,7 +44,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: 120px;
+  /* Remove bottom padding so the board fills the available height; team-bar is independent */
+  padding-bottom: 0;
 }
 
 /* -----------------------------
@@ -72,7 +75,7 @@
 }
 
 .gw-board { display: flex; gap: 1rem; padding: 0.8rem 1rem; flex: 1 1 auto; align-items: stretch }
-.gw-opponent, .gw-player { width: 22%; display:flex; flex-direction:column; gap:0.6rem }
+.gw-opponent, .gw-player { width: 18%; display:flex; flex-direction:column; gap:0.6rem }
 .gw-center { flex:1; display:flex; gap:1rem; align-items:flex-start }
 .table-column { flex: 1 1 auto; display:flex; flex-direction:column; gap:0.6rem; min-width: 0; min-height: 0 }
 .side-column, .left-column { display: none }
@@ -95,12 +98,31 @@
   color: var(--soft-white);
   text-shadow: 0 1px 0 rgba(0,0,0,0.6);
 }
-.deck-card::before{ content:''; position:absolute; inset:5px; border-radius:6px; /* subtle inner overlay for contrast */
-  background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.18)); opacity:0.9 }
 .deck-count { position:absolute; left:50%; transform:translateX(-50%); bottom:-12px; right:auto; background:linear-gradient(180deg, var(--blood-red), rgba(110,6,6,0.9)); color: var(--soft-white); padding:4px 8px; border-radius:10px; font-weight:800; box-shadow: 0 4px 10px rgba(138,7,7,0.12); z-index:3 }
-.deck-stack::before,.deck-stack::after{ content:''; position:absolute; left:0; top:0; width:100%; height:100%; border-radius:7px; /* stack shadows using palette */
-  background: linear-gradient(180deg, var(--navy-base) 0%, rgba(6,18,26,0.9) 100%);
-  box-shadow:0 6px 18px rgba(2,6,12,0.42); opacity:0.85 }
+.table-cards {
+  position: relative;
+  display: grid;
+  grid-auto-flow: row;
+  /* limit to a maximum of 5 columns per row; each column sizes to its content but
+     has a sensible min so mixed-size cards don't force tiny columns. Column gap
+     increased to give more horizontal breathing room. */
+  grid-template-columns: repeat(5, minmax(120px, max-content));
+  gap: 20px 30px; /* row-gap 20px, column-gap 30px (reduced spacing) */
+  /* slightly reduced padding to bring cards a bit closer */
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.04);
+  background: linear-gradient(180deg, rgba(12,20,24,0.02), rgba(10,14,18,0.04));
+  box-shadow: inset 0 1px 4px rgba(255,255,255,0.02), 0 6px 18px rgba(6,10,14,0.36);
+  align-items: flex-start;
+  box-sizing: border-box;
+  /* shrink-wrap to children and center the grid block inside the pan area so
+    when there are few (or zero) cards it will be horizontally centered.
+    We use max-content so the border hugs cards tightly and margin auto
+    to center the block. When empty, the .table-cards:empty rule collapses it. */
+  width: max-content;
+  margin: 0 auto;
+}
 .deck-stack::before{ transform: translate3d(-6px,6px,0); z-index:0; box-shadow:0 5px 10px rgba(2,6,12,0.32) }
 .deck-stack::after{ transform: translate3d(-10px,10px,0); opacity:0.7; z-index:-1; box-shadow:0 3px 8px rgba(2,6,12,0.28) }
 .deck-stack:hover .deck-card { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(2,6,14,0.34); transition: transform 180ms ease, box-shadow 180ms ease }
@@ -120,9 +142,64 @@
 /* -----------------------------
   Table (cards on board)
   ----------------------------- */
-.table-area { background: linear-gradient(180deg, rgba(11,60,93,0.06), rgba(0,0,0,0.06)); border-radius:10px; padding:1.5rem 1.5rem 1rem 1.5rem; min-height:160px; display:flex; align-items:center; justify-content:center; border: 1px solid rgba(255,255,255,0.03) }
+.table-area {
+  background: linear-gradient(180deg, rgba(11,60,93,0.06), rgba(0,0,0,0.06));
+  border-radius: 10px;
+  /* adjusted padding so table has enough room but isn't overly large */
+  padding: 3rem 2.5rem 2rem 2.5rem;
+  /* adequate min height to ensure cards fit without escaping */
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.03);
+  box-sizing: border-box; /* ensure padding is included in width calculations */
+  overflow-x: auto; /* allow horizontal scroll if content can't shrink further */
+}
 .table-placeholder { color: rgba(250,250,250,0.85) }
-.table-cards { position:relative; display:flex; align-items:flex-start; justify-content:flex-start; gap:1.2rem; flex-wrap:wrap }
+.table-cards {
+  position: relative;
+  /* use block-level grid and explicit shrink-wrapping width to ensure perfect centering */
+  display: grid;
+  grid-auto-flow: row;
+  /* force at most 5 columns per row; columns use a min width so cards (including
+     landscape 'personaje') don't overflow their neighbours. Wider horizontal gap
+     keeps cards visually separated. */
+  grid-template-columns: repeat(5, minmax(120px, max-content));
+  gap: 20px 30px; /* row-gap 20px / column-gap 30px */
+  padding: 20px;
+  /* keep some breathing room between the inner card-border and the table-area */
+  margin: 0 32px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.04);
+  background: linear-gradient(180deg, rgba(12,20,24,0.02), rgba(10,14,18,0.04));
+  box-shadow: inset 0 1px 4px rgba(255,255,255,0.02), 0 6px 18px rgba(6,10,14,0.36);
+  align-items: flex-start;
+  box-sizing: border-box;
+  /* take full area width and center the grid tracks so rows with few cards
+    appear centered (symmetrical left/right space). justify-items centers
+    the card within each slot. */
+  /* expand to fill the available width of the table-area so the grid has more room */
+  width: 100%;
+  max-width: none;
+  justify-content: center;
+  justify-items: center;
+}
+
+/* When there are no cards, collapse the grid visually so it starts at 0 and
+   grows naturally when children are added. This keeps the layout symmetric
+   and avoids relying on JS to toggle classes. Note: :empty matches only when
+   there are no element children (no text nodes). */
+.table-cards:empty {
+  width: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0; /* visually hide while allowing transition */
+  pointer-events: none;
+  transition: width 180ms ease, padding 140ms ease, opacity 150ms ease;
+}
 /* Make slots auto-size to their content so landscape (personaje) cards don't overflow
    or overlap neighbouring slots. We center the card inside each slot and allow the
    inner .card-root to determine the actual size. */
@@ -132,22 +209,21 @@
   justify-content: center;
   position: relative;
   will-change: transform;
-  margin: 8px;
-  padding: 6px; /* small gutter so larger landscape cards have breathing room */
+  /* remove external margin so spacing is controlled by the grid gap only */
+  margin: 0;
+  padding: 14px; /* reduced gutter so cards sit a bit closer */
+  perspective: 300px;
+  -webkit-perspective: 300px;
 }
-.table-slot { perspective: 300px; -webkit-perspective: 300px }
 .table-slot .card-root { transform-origin: center center; /* allow card-root to determine its own size */ }
 /* allow Personaje cards to be landscape inside slots - sizing comes from Card.css */
 /* no explicit forced size for personaje here; Card.css controls dimensions */
 .table-pan { overflow: hidden; width: 100%; display:flex; flex-direction:column; justify-content:flex-start; align-items:stretch; cursor: grab; flex: 1 1 auto; min-height: 0 }
 .table-pan.grabbing { cursor: grabbing }
-.table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; align-items:flex-start; justify-content: center }
+.table-pan-inner { will-change: transform; transition: transform 120ms linear; min-height: 0; flex: 1 1 auto; display:flex; align-items:flex-start; justify-content: center; width: 100% }
 /* Table cards should shrink-wrap to their children so the border follows the cards exactly.
   Use inline-flex and remove fixed max-height/overflow so the outline is the tight container. */
-/* Limit the board to 5 cards per row. Use grid with 5 columns sized to content
-  so the fifth card doesn't get stretched when a sixth exists. Responsive
-  fallbacks reduce columns on narrow viewports. */
-.table-cards { display: grid; grid-template-columns: repeat(5, max-content); gap: 12px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04); background: linear-gradient(180deg, rgba(12,20,24,0.02), rgba(10,14,18,0.04)); box-shadow: inset 0 1px 4px rgba(255,255,255,0.02), 0 6px 18px rgba(6,10,14,0.36); justify-content: center }
+
 .table-pan.grabbing .table-pan-inner { transition: none !important }
 
 /* -----------------------------
@@ -197,6 +273,25 @@
 .floating-controls button { padding:0.45rem 0.6rem; border-radius:6px; border:none; background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.92)); color: var(--soft-white); cursor:pointer; font-weight:700 }
 .gw-controls { display:flex; gap:0.5rem; margin-top:0.6rem }
 .gw-controls button { padding:0.5rem 0.7rem; border-radius:8px; border:none; background: linear-gradient(180deg, rgba(11,60,93,0.98), rgba(10,30,48,0.92)); color: var(--soft-white); cursor:pointer; font-weight:700 }
+
+/* Global surrender button placed on the overlay in the top-right corner */
+.surrender-global-btn {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 2600;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.94));
+  color: var(--soft-white);
+  border: 1px solid rgba(0,0,0,0.4);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.45);
+  cursor: pointer;
+  font-weight: 800;
+  transition: transform 140ms cubic-bezier(.2,.9,.3,1), box-shadow 140ms ease;
+}
+.surrender-global-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,0.5) }
+.surrender-global-btn:active { transform: translateY(0); box-shadow: 0 6px 12px rgba(0,0,0,0.32) }
 
 /* Button interaction animations (applies to buttons inside the game window) */
 .gw-window button,
@@ -259,8 +354,8 @@
 .card-modal-backdrop.show { opacity: 1; pointer-events: auto }
 .card-modal-content { transform: scale(0.92); transition: transform 240ms cubic-bezier(.2,.9,.2,1), opacity 240ms ease; opacity: 0; will-change: transform, opacity }
 .card-modal-backdrop.show .card-modal-content { transform: scale(1); opacity: 1 }
-.card-modal-content .card-root { transform-origin: center center; transform: none; box-shadow: 0 30px 80px rgba(0,0,0,0.7); width: min(420px, 78vw) !important; height: auto !important; max-height: 86vh; }
-.card-modal-content .card-root.personaje { width: min(560px, 86vw) !important; height: auto !important; max-height: 86vh }
+.card-modal-content .card-root { transform-origin: center center; transform: none; box-shadow: 0 30px 80px rgba(0,0,0,0.7); width: min(360px, 72vw) !important; height: auto !important; max-height: 76vh; }
+.card-modal-content .card-root.personaje { width: min(480px, 80vw) !important; height: auto !important; max-height: 76vh }
 .card-modal-content .card-risk { font-size: 4rem !important }
 .card-modal-content .card-conflict { font-size: 1.6rem !important }
 
