@@ -103,25 +103,26 @@
   position: relative;
   display: grid;
   grid-auto-flow: row;
-  /* limit to a maximum of 5 columns per row; each column sizes to its content but
-     has a sensible min so mixed-size cards don't force tiny columns. Column gap
-     increased to give more horizontal breathing room. */
-  grid-template-columns: repeat(5, minmax(120px, max-content));
-  gap: 20px 30px; /* row-gap 20px, column-gap 30px (reduced spacing) */
-  /* slightly reduced padding to bring cards a bit closer */
+  /* Keep exactly 5 columns per row. Each column will be at least the card's
+     min width but may grow to fill available space evenly. Cards are centered
+     inside each column so their intrinsic width is preserved while the grid
+     expands vertically as more rows are added. */
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 20px 30px; /* row-gap 20px, column-gap 30px */
   padding: 16px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.04);
   background: linear-gradient(180deg, rgba(12,20,24,0.02), rgba(10,14,18,0.04));
   box-shadow: inset 0 1px 4px rgba(255,255,255,0.02), 0 6px 18px rgba(6,10,14,0.36);
-  align-items: flex-start;
+  align-items: start;
   box-sizing: border-box;
-  /* shrink-wrap to children and center the grid block inside the pan area so
-    when there are few (or zero) cards it will be horizontally centered.
-    We use max-content so the border hugs cards tightly and margin auto
-    to center the block. When empty, the .table-cards:empty rule collapses it. */
-  width: max-content;
-  margin: 0 auto;
+  /* Use full available width so the grid distributes 5 columns across the area.
+     Center cards within their cell and prevent horizontal scrolling; when more
+     cards are added the grid will create new rows and increase in height. */
+  width: 100%;
+  max-width: 100%;
+  justify-content: center;
+  justify-items: center;
 }
 .deck-stack::before{ transform: translate3d(-6px,6px,0); z-index:0; box-shadow:0 5px 10px rgba(2,6,12,0.32) }
 .deck-stack::after{ transform: translate3d(-10px,10px,0); opacity:0.7; z-index:-1; box-shadow:0 3px 8px rgba(2,6,12,0.28) }
@@ -154,34 +155,28 @@
   justify-content: center;
   border: 1px solid rgba(255,255,255,0.03);
   box-sizing: border-box; /* ensure padding is included in width calculations */
-  overflow-x: auto; /* allow horizontal scroll if content can't shrink further */
+  /* Prefer vertical expansion: prevent horizontal scrolling and allow the
+     table-area to grow vertically when new rows are created. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .table-placeholder { color: rgba(250,250,250,0.85) }
 .table-cards {
   position: relative;
-  /* use block-level grid and explicit shrink-wrapping width to ensure perfect centering */
   display: grid;
   grid-auto-flow: row;
-  /* force at most 5 columns per row; columns use a min width so cards (including
-     landscape 'personaje') don't overflow their neighbours. Wider horizontal gap
-     keeps cards visually separated. */
-  grid-template-columns: repeat(5, minmax(120px, max-content));
-  gap: 20px 30px; /* row-gap 20px / column-gap 30px */
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 20px 30px;
   padding: 20px;
-  /* keep some breathing room between the inner card-border and the table-area */
   margin: 0 32px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.04);
   background: linear-gradient(180deg, rgba(12,20,24,0.02), rgba(10,14,18,0.04));
   box-shadow: inset 0 1px 4px rgba(255,255,255,0.02), 0 6px 18px rgba(6,10,14,0.36);
-  align-items: flex-start;
+  align-items: start;
   box-sizing: border-box;
-  /* take full area width and center the grid tracks so rows with few cards
-    appear centered (symmetrical left/right space). justify-items centers
-    the card within each slot. */
-  /* expand to fill the available width of the table-area so the grid has more room */
   width: 100%;
-  max-width: none;
+  max-width: 100%;
   justify-content: center;
   justify-items: center;
 }
@@ -191,14 +186,9 @@
    and avoids relying on JS to toggle classes. Note: :empty matches only when
    there are no element children (no text nodes). */
 .table-cards:empty {
-  width: 0 !important;
-  height: 0 !important;
-  padding: 0 !important;
-  border: none !important;
-  box-shadow: none !important;
-  opacity: 0; /* visually hide while allowing transition */
-  pointer-events: none;
-  transition: width 180ms ease, padding 140ms ease, opacity 150ms ease;
+  /* hide grid when there are no card children without collapsing layout width
+     so the surrounding .table-area keeps its spacing. */
+  display: none;
 }
 /* Make slots auto-size to their content so landscape (personaje) cards don't overflow
    or overlap neighbouring slots. We center the card inside each slot and allow the
@@ -420,5 +410,38 @@
 
   /* Card menu: ensure it fits on narrow screens */
   .card-menu { left: 50% !important; top: auto !important; bottom: 12px !important; transform: translateX(-50%) !important; width: min(92%, 320px) !important; box-sizing: border-box }
+}
+
+/* Responsive grid adjustments to avoid card overlap on narrower viewports.
+   Reduce columns progressively from 5 -> 4 -> 3 -> 2 -> 1 and tweak gaps/margins. */
+@media (max-width: 1300px) {
+  .table-cards {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 18px 22px;
+    margin: 0 20px;
+  }
+  .table-area { padding: 2.4rem 1.8rem 1.4rem 1.8rem }
+}
+
+@media (max-width: 1000px) {
+  .table-cards {
+    grid-template-columns: repeat(3, minmax(100px, 1fr));
+    gap: 14px 18px;
+    margin: 0 14px;
+  }
+  .table-area { padding: 2rem 1.2rem 1rem 1.2rem }
+}
+
+@media (max-width: 640px) {
+  .table-cards {
+    grid-template-columns: repeat(2, minmax(84px, 1fr));
+    gap: 12px 14px;
+    padding: 12px;
+    margin: 0 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .table-cards { grid-template-columns: repeat(1, minmax(72px, 1fr)); gap: 10px }
 }
 
