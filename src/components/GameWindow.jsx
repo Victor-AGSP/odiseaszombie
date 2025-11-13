@@ -49,6 +49,9 @@ export default function GameWindow({ onClose }) {
   const roundRestartingRef = useRef(false)
   const [conflictAlert, setConflictAlert] = useState(false)
   const [encounterActionsToday, setEncounterActionsToday] = useState(0)
+  // Número de encuentros (revelaciones) por paso de encuentro. Por defecto 1.
+  // Algunos personajes/efectos pueden incrementar este valor en el futuro.
+  const [encountersPerTurn, setEncountersPerTurn] = useState(1)
 
   // mini-menu state for hand cards
   const [menuCard, setMenuCard] = useState(null)
@@ -302,10 +305,27 @@ export default function GameWindow({ onClose }) {
       pushLog('Ya alcanzaste 3 acciones de encuentro hoy')
       return
     }
-    setEncounterActionsToday(n => n + 1)
-    pushLog('Paso de Encuentro: mostrando la primera carta del mazo')
-    // re-use existing showCard behaviour (await because showCard is async)
-    await showCard()
+
+    // Repetir la acción de mostrar carta tantas veces como indique `encountersPerTurn`.
+    // Usamos una variable local `actions` para mantener un conteo consistente
+    // al iterar y actualizar el estado `encounterActionsToday`.
+    const count = Math.max(1, Number(encountersPerTurn) || 1)
+    let actions = Number(encounterActionsToday) || 0
+    for (let i = 0; i < count; i++) {
+      if (actions >= 3) {
+        pushLog('Ya alcanzaste 3 acciones de encuentro hoy')
+        break
+      }
+      actions++
+      setEncounterActionsToday(actions)
+      pushLog(`Paso de Encuentro: mostrando carta ${i + 1} de ${count}`)
+      // Reusar comportamiento existente de showCard (es async y puede abrir modales)
+      // Esperamos a que cada revelación termine antes de continuar a la siguiente.
+      // Nota: showCard gestiona su propio bloqueo para evitar revelaciones concurrentes.
+      // re-use existing showCard behaviour (await because showCard is async)
+      // eslint-disable-next-line no-await-in-loop
+      await showCard()
+    }
   }
 
   function pasoDecision() {
