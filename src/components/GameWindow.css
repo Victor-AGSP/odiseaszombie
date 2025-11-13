@@ -137,6 +137,17 @@
 .deck-extra-btn { padding: 0.4rem 0.7rem; border-radius:8px; background: linear-gradient(180deg, rgba(138,7,7,0.98), rgba(110,6,6,0.94)); color: var(--soft-white); border:none; cursor:pointer; font-weight:700; transition: transform 120ms cubic-bezier(.2,.9,.3,1) }
 .deck-extra-btn:active { transform: translateY(1px) }
 
+/* Disabled state: darker, less saturated, not clickable */
+.deck-extra-btn:disabled,
+.deck-extra-btn[disabled] {
+  background: linear-gradient(180deg, rgba(60,20,20,0.95), rgba(40,12,12,0.95));
+  opacity: 0.65;
+  cursor: not-allowed;
+  color: rgba(240,240,240,0.85);
+  box-shadow: none;
+  transform: none;
+}
+
 .deck-discard-btn { padding: 0.35rem 0.6rem; border-radius:8px; background: linear-gradient(180deg, rgba(6,18,26,0.9), rgba(8,28,40,0.9)); color: var(--soft-white); border:none; cursor:pointer; font-weight:700; font-size:0.85rem }
 .deck-discard-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 22px rgba(2,6,14,0.28) }
 

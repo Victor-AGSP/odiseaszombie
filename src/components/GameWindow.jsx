@@ -542,6 +542,8 @@ export default function GameWindow({ onClose }) {
   const topRef = useRef(null)
   const isShowingRef = useRef(false)
   const [isShowing, setIsShowing] = useState(false)
+  // resolve function for an in-progress showCard() so pasoEncuentro can await modal resolution
+  const showCardResolveRef = useRef(null)
   // Visibility toggle for the entire team bar (Equipo, Evento, Talento, Iniciativa)
   const [teamVisible, setTeamVisible] = useState(true)
 
@@ -581,88 +583,92 @@ export default function GameWindow({ onClose }) {
       return
     }
 
-  // create a visual clone for the flip animation
-  const { clone, rect } = createFixedClone(deckEl)
+    // create a visual clone for the flip animation
+    const { clone, rect } = createFixedClone(deckEl)
 
-    // flip in place (rotateY). At mid-point, swap content to show card front
-    const half = clone.animate([
-      { transform: 'rotateY(0deg)' },
-      { transform: 'rotateY(90deg)' }
-    ], { duration: 260, easing: 'cubic-bezier(.22,.9,.3,1)' })
+    // Return a promise that resolves when the reveal completes and any modal-triggered
+    // user interaction finishes (so pasoEncuentro can await mandatory actions).
+    return new Promise((resolve) => {
+      const half = clone.animate([
+        { transform: 'rotateY(0deg)' },
+        { transform: 'rotateY(90deg)' }
+      ], { duration: 260, easing: 'cubic-bezier(.22,.9,.3,1)' })
 
-  half.onfinish = () => {
-      // replace clone inner with a simple front face using Card markup
-      // keep it lightweight: show risk/conflict text
-  clone.innerHTML = ''
-  clone.classList.add('revealed-clone')
-  const front = document.createElement('div')
-  front.style.width = `${rect.width}px`
-  front.style.height = `${rect.height}px`
-  front.style.display = 'block'
-  front.style.borderRadius = '10px'
-  front.style.overflow = 'hidden'
-  // If the card has an artwork image, show it full-bleed; otherwise use a neutral gradient
-  if (topRef.current && topRef.current.img) {
-    const art = document.createElement('img')
-    art.src = topRef.current.img
-    art.alt = topRef.current.name || ''
-    art.style.width = '100%'
-    art.style.height = '100%'
-    art.style.objectFit = 'cover'
-    art.style.display = 'block'
-    front.appendChild(art)
-  } else {
-    front.style.background = 'linear-gradient(180deg,#0f1315,#061013)'
-  }
-  clone.appendChild(front)
-
-      // finish flip to show front
-      clone.animate([
-        { transform: 'rotateY(90deg)' },
-        { transform: 'rotateY(0deg)' }
-      ], { duration: 240, easing: 'cubic-bezier(.22,.9,.3,1)' })
-
-      // after small delay, place the card on the table and remove clone with a pop animation
-        setTimeout(() => {
-    // top already removed from deck; place into table or event slot
-  try {
-        if (topRef.current && topRef.current.type === 'evento') {
-      // show a simple modal to acknowledge the Evento before applying it
-      setEventModalCard(topRef.current)
-      pushLog('Mostraste un Evento (pulsa continuar para aplicarlo)')
-        } else if (topRef.current && topRef.current.type === 'personaje') {
-          // show recruit modal: player must roll a die to try to recruit
-          setRecruitCard(topRef.current)
-          pushLog('Mostraste un Personaje: lanza el dado para intentar reclutarlo')
-          // do not place it yet; will be placed after roll
+      half.onfinish = () => {
+        clone.innerHTML = ''
+        clone.classList.add('revealed-clone')
+        const front = document.createElement('div')
+        front.style.width = `${rect.width}px`
+        front.style.height = `${rect.height}px`
+        front.style.display = 'block'
+        front.style.borderRadius = '10px'
+        front.style.overflow = 'hidden'
+        if (topRef.current && topRef.current.img) {
+          const art = document.createElement('img')
+          art.src = topRef.current.img
+          art.alt = topRef.current.name || ''
+          art.style.width = '100%'
+          art.style.height = '100%'
+          art.style.objectFit = 'cover'
+          art.style.display = 'block'
+          front.appendChild(art)
         } else {
-          setTable(t => [...t, topRef.current])
-          pushLog('Mostraste una carta y la colocaste en mesa')
-          // animate a movement from deck -> table using the existing helper
-          try {
-            const dest = tableRef.current
-            if (dest) animateCardToTarget(deckEl, dest, () => {})
-          } catch (e) {
-            // ignore animation failures
-          }
-    }
-  } catch (e) {
-    // ensure we still clear the lock below
-    console.error('Error placing card after reveal', e)
-  }
+          front.style.background = 'linear-gradient(180deg,#0f1315,#061013)'
+        }
+        clone.appendChild(front)
 
-            clone.animate([
-              { transform: 'translateY(0px) scale(1)', opacity: 1 },
-              { transform: 'translateY(20px) scale(0.9)', opacity: 0 }
-            ], { duration: 420, easing: 'cubic-bezier(.22,.9,.3,1)' }).onfinish = () => {
-              clone.remove()
-              // clear showing lock
-              isShowingRef.current = false
-              setIsShowing(false)
-              topRef.current = null
+        // finish flip to show front
+        clone.animate([
+          { transform: 'rotateY(90deg)' },
+          { transform: 'rotateY(0deg)' }
+        ], { duration: 240, easing: 'cubic-bezier(.22,.9,.3,1)' })
+
+        // after small delay, place the card on the table and remove clone with a pop animation
+        setTimeout(() => {
+          try {
+            if (topRef.current && topRef.current.type === 'evento') {
+              setEventModalCard(topRef.current)
+              pushLog('Mostraste un Evento (pulsa continuar para aplicarlo)')
+              // Defer resolution until user closes the event modal
+              showCardResolveRef.current = resolve
+            } else if (topRef.current && topRef.current.type === 'personaje') {
+              setRecruitCard(topRef.current)
+              pushLog('Mostraste un Personaje: lanza el dado para intentar reclutarlo')
+              // Defer resolution until user completes the recruit roll
+              showCardResolveRef.current = resolve
+            } else {
+              setTable(t => [...t, topRef.current])
+              pushLog('Mostraste una carta y la colocaste en mesa')
+              // animate a movement from deck -> table using the existing helper
+              try {
+                const dest = tableRef.current
+                if (dest) animateCardToTarget(deckEl, dest, () => {})
+              } catch (e) {
+                // ignore animation failures
+              }
+              // No modal opened — resolve immediately after reveal
+              resolve()
             }
-      }, 420)
-    }
+          } catch (e) {
+            // ensure we still clear the lock below
+            console.error('Error placing card after reveal', e)
+            resolve()
+          }
+
+          clone.animate([
+            { transform: 'translateY(0px) scale(1)', opacity: 1 },
+            { transform: 'translateY(20px) scale(0.9)', opacity: 0 }
+          ], { duration: 420, easing: 'cubic-bezier(.22,.9,.3,1)' }).onfinish = () => {
+            clone.remove()
+            // clear showing lock (note: if we deferred, resolution will happen via handlers)
+            isShowingRef.current = false
+            setIsShowing(false)
+            topRef.current = null
+          }
+        }, 420)
+      }
+    })
+    
   }
 
   const tableRef = useRef(null)
@@ -1093,6 +1099,16 @@ export default function GameWindow({ onClose }) {
   }
 
   async function nextStep() {
+    // Prevent advancing while a card reveal animation or an encuentro modal is active
+    if (isShowingRef.current || isShowing) {
+      pushLog('Esperando a que termine la revelación de la carta antes de avanzar')
+      return
+    }
+    if (eventModalCard || recruitCard) {
+      pushLog('Cierra el modal de Encuentro antes de avanzar')
+      return
+    }
+
     if (gameOver) {
       pushLog('Juego terminado. No puedes avanzar más pasos.')
       return
@@ -1103,8 +1119,10 @@ export default function GameWindow({ onClose }) {
     if (nextIdx >= order.length) nextIdx = 0
     const next = order[nextIdx]
     // If currently in decision phase, prevent leaving it while any personajes are still
-    // marked as awaiting decision or in conflict (i.e., have the red border).
-    const hasPending = (decisionRoundParticipants && decisionRoundParticipants.length > 0) || (table && table.some && table.some(c => c.awaitingDecision || c.inConflict))
+    // pending resolution: either the decision round participants list is non-empty,
+    // or any personaje on the table is awaitingDecision, inConflict, or not yet processed.
+    const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
+    const hasPending = (decisionRoundParticipants && decisionRoundParticipants.length > 0) || tableHasPendingPersonajes
     if (currentStep === 'decision' && hasPending) {
       pushLog('Hay conflictos pendientes: resuélvelos antes de avanzar de Decisión')
       // flash a visual alert on awaiting cards to indicate why advancing is blocked
@@ -1218,6 +1236,13 @@ export default function GameWindow({ onClose }) {
         isShowingRef.current = false
         setIsShowing(false)
         topRef.current = null
+        // If showCard() was awaiting this recruit modal, resolve it so pasoEncuentro can continue
+        try {
+          if (showCardResolveRef.current) {
+            showCardResolveRef.current()
+            showCardResolveRef.current = null
+          }
+        } catch (e) {}
       }, 380)
     }, 720)
   }
@@ -1233,8 +1258,24 @@ export default function GameWindow({ onClose }) {
       pushLog('Evento aplicado: reemplazaste el evento anterior')
     } finally {
       setEventModalCard(null)
+        // If showCard() was awaiting this event modal, resolve it so pasoEncuentro can continue
+        try {
+          if (showCardResolveRef.current) {
+            showCardResolveRef.current()
+            showCardResolveRef.current = null
+          }
+        } catch (e) {}
     }
   }
+
+  // compute whether the main advance button should be disabled (reveal in progress, modals open, game over, or pending decisions)
+  const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
+  const advanceDisabled = Boolean(
+    isShowingRef.current || isShowing ||
+    eventModalCard || recruitCard ||
+    gameOver ||
+    (currentStep === 'decision' && ((decisionRoundParticipants && decisionRoundParticipants.length > 0) || tableHasPendingPersonajes))
+  )
 
   return (
   <div className="gw-root" role="dialog" aria-modal="true" onClick={() => { closeCardMenu(); setSelectedForDecision(null) }}>
@@ -1271,9 +1312,9 @@ export default function GameWindow({ onClose }) {
         {/* Single dynamic step button: advances through the day's steps internally */}
         <div className="floating-controls" style={{ flexDirection: 'column', gap: 8 }}>
           {!currentStep ? (
-            <button className="deck-extra-btn" onClick={() => { startGame() }}>Iniciar</button>
+            <button className="deck-extra-btn" onClick={() => { startGame() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>Iniciar</button>
           ) : (
-            <button className="deck-extra-btn" onClick={() => { nextStep() }}>Siguiente paso</button>
+            <button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>Siguiente paso</button>
           )}
           <div style={{ color: '#cfe9f7', fontSize: 12, marginTop: 6 }}>
             <div>Paso: {currentStep || '—'}</div>
