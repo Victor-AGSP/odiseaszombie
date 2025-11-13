@@ -30,6 +30,13 @@ export default function GameWindow({ onClose }) {
   const [zombies, setZombies] = useState(0)
   const [log, setLog] = useState([])
   const [hoveredIndex, setHoveredIndex] = useState(null)
+  // Game step system (single-player focused)
+  const [currentStep, setCurrentStep] = useState('') // '', 'preparacion','encuentro','decision','riesgo','defensa','viaje'
+  const [travelCount, setTravelCount] = useState(0)
+  const [fatigueCount, setFatigueCount] = useState(0)
+  const roundRestartingRef = useRef(false)
+  const [conflictAlert, setConflictAlert] = useState(false)
+  const [encounterActionsToday, setEncounterActionsToday] = useState(0)
 
   // mini-menu state for hand cards
   const [menuCard, setMenuCard] = useState(null)
@@ -222,6 +229,15 @@ export default function GameWindow({ onClose }) {
   const [recruitCard, setRecruitCard] = useState(null)
   const [isRolling, setIsRolling] = useState(false)
   const [rollResult, setRollResult] = useState(null)
+  // Decision roll modal state (animated die when resolving decisiones)
+  const [decisionModalCard, setDecisionModalCard] = useState(null)
+  const [isDecisionRolling, setIsDecisionRolling] = useState(false)
+  const [decisionRollResult, setDecisionRollResult] = useState(null)
+  const [selectedForDecision, setSelectedForDecision] = useState(null)
+  const [decisionRoundParticipants, setDecisionRoundParticipants] = useState([])
+  const [gameOver, setGameOver] = useState(false)
+  const latestTableRef = useRef(table)
+  useEffect(() => { latestTableRef.current = table }, [table])
   // When recruitCard is a personaje and user tries to close by clicking outside,
   // show a warning animation on the die briefly.
   const [recruitWarn, setRecruitWarn] = useState(false)
@@ -229,7 +245,7 @@ export default function GameWindow({ onClose }) {
   const [eventModalCard, setEventModalCard] = useState(null)
   // discard pile state + modal
   const [discardPile, setDiscardPile] = useState([])
-  const [discardModalOpen, setDiscardModalOpen] = useState(false)
+  
 
   function addToDiscard(card) {
     if (!card) return
@@ -247,6 +263,112 @@ export default function GameWindow({ onClose }) {
 
   function pushLog(msg) {
     setLog(l => [msg, ...l].slice(0, 8))
+  }
+  // ---- Paso system implementation (single-player minimal) ----
+  function pasoPreparacion() {
+    setCurrentStep('preparacion')
+    // reduce fatigue counters by 1 (not below 0)
+    setFatigueCount(f => Math.max(0, f - 1))
+    pushLog('Paso de Preparación: contadores de cansancio reducidos')
+    // player with iniciativa gets an additional reduction — single-player always has iniciativa
+    setFatigueCount(f => Math.max(0, f - 1))
+    pushLog('Iniciativa aplicada: reducción adicional de cansancio')
+    // Allow personajes to be interactable again for decisión (se limpia marca por día)
+    setTable(t => (t || []).map(c => ({ ...c, processedDecision: false, awaitingDecision: false })))
+  }
+
+  async function pasoEncuentro() {
+    setCurrentStep('encuentro')
+    // limit to 3 encuentro actions per day
+    if (encounterActionsToday >= 3) {
+      pushLog('Ya alcanzaste 3 acciones de encuentro hoy')
+      return
+    }
+    setEncounterActionsToday(n => n + 1)
+    pushLog('Paso de Encuentro: mostrando la primera carta del mazo')
+    // re-use existing showCard behaviour (await because showCard is async)
+    await showCard()
+  }
+
+  function pasoDecision() {
+    setCurrentStep('decision')
+    const personajes = (table || []).filter(c => c.type === 'personaje')
+    if (!personajes || personajes.length === 0) {
+      pushLog('Paso de Decisión: no hay personajes en mesa')
+      return
+    }
+
+    // mark personajes as awaiting decision (visual red border) unless already processed
+    setTable(t => (t || []).map(c => (c.type === 'personaje' && !c.processedDecision) ? { ...c, awaitingDecision: true, interactedThisRound: false, inConflict: false } : c))
+    // initialize round participants with the IDs of personajes that must be processed this round
+    setDecisionRoundParticipants(personajes.filter(p => !p.processedDecision).map(p => p.id))
+    pushLog('Paso de Decisión: los personajes en mesa esperan resolución. Haz click en un personaje y pulsa "Conflicto"')
+  }
+
+  function pasoRiesgo() {
+    setCurrentStep('riesgo')
+    const die = rollDice()
+    // sum allied personajes risk (table items allied = !errant)
+    const alliedRisk = table.filter(c => c.type === 'personaje' && !c.errant).reduce((s, x) => s + (Number(x.risk) || 0), 0)
+    const delta = die + alliedRisk
+    setZombies(z => z + delta)
+    pushLog(`Paso de Riesgo: dado ${die} + riesgo aliado ${alliedRisk} => +${delta} amenaza`) 
+  }
+
+  function pasoDefensa() {
+    setCurrentStep('defensa')
+    const die = rollDice()
+    // subtract from zombies
+    setZombies(z => {
+      const next = Math.max(0, z - die)
+      return next
+    })
+    // every elimination step adds a fatigue counter
+    setFatigueCount(f => f + 1)
+    pushLog(`Paso de Defensa: lanzaste d6: ${die} (resta ${die} zombies), se añadió 1 cansancio a todos`) 
+  }
+
+  function pasoViaje() {
+    setCurrentStep('viaje')
+    setTravelCount(t => {
+      const next = t + 1
+      if (next >= 20) pushLog('¡Contador de viaje alcanzó 20 — victoria!')
+      else pushLog(`Paso de Viaje: contador de viaje = ${next}`)
+      return next
+    })
+    // End of day cleanup: reset encounter actions
+    setEncounterActionsToday(0)
+    // Clear per-day temporary abilities (not modeled in detail here)
+  }
+
+  // Resolve conflict with a personaje (simplified single-player algorithm)
+  function resolveConflict(character) {
+    if (!character) return
+    const conflictValue = Number(character.conflict) || 0
+    // continue rolling until result >= conflictValue
+    let attempts = 0
+    while (true) {
+      attempts++
+      const r = rollDice()
+      pushLog(`Conflicto: tirada ${r} (meta ${conflictValue})`)
+      if (r > conflictValue) {
+        // success: return personaje to deck
+        setTable(t => t.filter(x => x !== character))
+        setDeck(d => [character, ...d])
+        pushLog('Resultado mayor: el personaje regresa a la baraja de encuentros')
+        break
+      } else if (r === conflictValue) {
+        // equal: stays errant
+        pushLog('Resultado igual: el personaje permanece errante')
+        break
+      } else {
+        // less: add X zombies (X = result) and roll again
+        setZombies(z => z + r)
+        pushLog(`Resultado menor: se añaden ${r} zombies y se vuelve a tirar`) 
+        // safety: limit infinite loops
+        if (attempts > 12) { pushLog('Demasiados intentos en conflicto; se detiene') ; break }
+      }
+    }
   }
 
   function drawCard() {
@@ -782,6 +904,171 @@ export default function GameWindow({ onClose }) {
 
   function rollDice() { return Math.floor(Math.random() * 6) + 1 }
 
+  // Animate a decision roll using a modal die similar to recruit modal.
+  // Show the modal for a decision but do NOT start the roll until user clicks the die
+  function showDecisionModal(card) {
+    setDecisionModalCard(card)
+    setIsDecisionRolling(false)
+    setDecisionRollResult(null)
+    // clear any selection
+    setSelectedForDecision(null)
+  }
+
+  // Start the animated die roll for the currently shown decision modal
+  function startDecisionRoll() {
+    return new Promise((resolve) => {
+      const card = decisionModalCard
+      if (!card) { resolve(null); return }
+      setIsDecisionRolling(true)
+      setDecisionRollResult(null)
+      const interval = setInterval(() => {
+        setDecisionRollResult(Math.floor(Math.random() * 6) + 1)
+      }, 80)
+      setTimeout(() => {
+        clearInterval(interval)
+        const final = rollDice()
+        setDecisionRollResult(final)
+        // small delay so user sees final
+        setTimeout(() => {
+          setIsDecisionRolling(false)
+          setDecisionModalCard(null)
+          setDecisionRollResult(null)
+          // resolve the decision for this card
+          resolve({ card, final })
+        }, 420)
+      }, 720)
+    })
+  }
+
+  // Apply the decision result to the given card
+  function resolveDecisionForCard(card, raw) {
+    if (!card) return
+    const adjusted = Math.max(0, raw - (Number(fatigueCount) || 0))
+    const conflictVal = Number(card.conflict) || 0
+    const riskVal = Number(card.risk) || 0
+    pushLog(`Decisión para ${card.name || 'Personaje'}: tirada ${raw} - cansancio ${fatigueCount} => ${adjusted} (conflicto ${conflictVal})`)
+
+    if (adjusted > conflictVal) {
+      // discard
+      setTable(t => t.filter(x => x !== card))
+      addToDiscard(card)
+      pushLog(`${card.name || 'Personaje'}: resultado mayor — descartado`)
+    } else if (adjusted === conflictVal) {
+      setZombies(z => z + riskVal)
+      // mark as processed and not in conflict
+      setTable(t => t.map(x => x === card ? { ...x, processedDecision: true, awaitingDecision: false, inConflict: false, interactedThisRound: true } : x))
+      pushLog(`${card.name || 'Personaje'}: resultado igual — permanece en mesa y se suma su amenaza (${riskVal}) a la amenaza total`)
+    } else {
+      setZombies(z => z + riskVal)
+      // mark as still in conflict; it will be revisited in next round
+      setTable(t => t.map(x => x === card ? { ...x, processedDecision: false, awaitingDecision: false, inConflict: true, interactedThisRound: true } : x))
+      pushLog(`${card.name || 'Personaje'}: resultado menor — se suma su amenaza (${riskVal}) y queda en conflicto (se volverá a intentar).`)
+    }
+
+    // After resolving this card, check if the current round (decisionRoundParticipants) is complete
+    setTimeout(() => {
+      try {
+        setDecisionRoundParticipants(current => {
+          const tbl = latestTableRef.current || []
+          const remaining = (current || []).filter(id => {
+            // if card was discarded, it's not present; treat as done
+            const found = tbl.find(t => t.id === id)
+            if (!found) return false
+            // if found and interactedThisRound true => done
+            return !found.interactedThisRound
+          })
+          if (!remaining || remaining.length === 0) {
+            // round finished: check if any characters remain IN CONFLICT
+            const tblNow = latestTableRef.current || []
+            const stillInConflict = tblNow.filter(c => c.inConflict)
+            if (stillInConflict && stillInConflict.length > 0) {
+              // start a new round with these ids and add 1 fatigue for having to retry
+              // Guard with a ref so this increment only happens once even if multiple
+              // callbacks race to detect the round end.
+              if (!roundRestartingRef.current) {
+                roundRestartingRef.current = true
+                setFatigueCount(f => {
+                  const next = f + 1
+                  pushLog('Fin de ronda de conflicto: +1 cansancio por reiniciar la ronda')
+                  if (next >= 6) {
+                    pushLog('Has alcanzado 6 de cansancio: has perdido.')
+                    setGameOver(true)
+                  }
+                  return next
+                })
+                // release the guard shortly after — by then the new round state will be queued
+                setTimeout(() => { roundRestartingRef.current = false }, 200)
+              }
+              setDecisionRoundParticipants(stillInConflict.map(c => c.id))
+              // mark them awaitingDecision and reset interactedThisRound
+              setTable(t => (t || []).map(x => x.inConflict ? { ...x, awaitingDecision: true, interactedThisRound: false } : x))
+            } else {
+              // no more conflicts: clear round participants and awaiting flags
+              setDecisionRoundParticipants([])
+              setTable(t => (t || []).map(x => ({ ...x, awaitingDecision: false, interactedThisRound: false, inConflict: false })))
+              pushLog('Todos los conflictos resueltos para hoy')
+            }
+          }
+          return remaining
+        })
+      } catch (err) {
+        console.error('Error comprobando fin de ronda', err)
+      }
+    }, 80)
+  }
+
+  // Advance to the next step in the day (single dynamic button)
+  function startGame() {
+    // explicit start action: run preparacion and set current step
+    try {
+      pasoPreparacion()
+    } catch (e) {
+      console.error('Error starting game', e)
+    }
+    setCurrentStep('preparacion')
+  }
+
+  async function nextStep() {
+    if (gameOver) {
+      pushLog('Juego terminado. No puedes avanzar más pasos.')
+      return
+    }
+    const order = ['preparacion','encuentro','decision','riesgo','defensa','viaje']
+    const idx = currentStep ? order.indexOf(currentStep) : -1
+    let nextIdx = idx + 1
+    if (nextIdx >= order.length) nextIdx = 0
+    const next = order[nextIdx]
+    // If currently in decision phase, prevent leaving it while any personajes are still
+    // marked as awaiting decision or in conflict (i.e., have the red border).
+    const hasPending = (decisionRoundParticipants && decisionRoundParticipants.length > 0) || (table && table.some && table.some(c => c.awaitingDecision || c.inConflict))
+    if (currentStep === 'decision' && hasPending) {
+      pushLog('Hay conflictos pendientes: resuélvelos antes de avanzar de Decisión')
+      // flash a visual alert on awaiting cards to indicate why advancing is blocked
+      try {
+        setConflictAlert(true)
+        setTimeout(() => setConflictAlert(false), 700)
+      } catch (e) {}
+      return
+    }
+
+    // No blocking detected — update step and run associated logic
+    setCurrentStep(next)
+    try {
+      if (next === 'preparacion') pasoPreparacion()
+      else if (next === 'encuentro') await pasoEncuentro()
+      else if (next === 'decision') await pasoDecision()
+      else if (next === 'riesgo') pasoRiesgo()
+      else if (next === 'defensa') pasoDefensa()
+      else if (next === 'viaje') {
+        pasoViaje()
+        // increment day counter at end of day
+        setDays(d => d + 1)
+      }
+    } catch (e) {
+      console.error('Error advancing step', e)
+    }
+  }
+
   // (Removed game-phase helper functions: pasoDecision, pasoRiesgo, pasoDefensa, endDay)
   // These controls and their logic were removed per request to simplify the UI.
 
@@ -886,7 +1173,7 @@ export default function GameWindow({ onClose }) {
   }
 
   return (
-    <div className="gw-root" role="dialog" aria-modal="true" onClick={() => { closeCardMenu() }}>
+  <div className="gw-root" role="dialog" aria-modal="true" onClick={() => { closeCardMenu(); setSelectedForDecision(null) }}>
       <div className="gw-overlay-stats">
         <div className="stats-box">
           <div>dias</div>
@@ -902,21 +1189,33 @@ export default function GameWindow({ onClose }) {
             <div className="deck-count">{deck.length}</div>
           </div>
           <div className="deck-controls">
-            <button className="draw-btn" disabled={isShowing || deck.length === 0} title={deck.length === 0 ? 'Mazo vacío' : ''} onClick={() => { closeCardMenu(); showCard() }}>Mostrar</button>
-            <button className="deck-discard-btn" onClick={() => { closeCardMenu(); setDiscardModalOpen(true) }} title="Ver cartas descartadas">Cartas descartadas ({discardPile.length})</button>
+            {/* 'Mostrar' and 'Cartas descartadas' buttons removed per request; 'showCard' still used by pasoEncuentro */}
           </div>
           {/* Extra controls centered beneath the deck-stack */}
           <div className="deck-extra-controls" aria-hidden={false}>
             <button className="deck-extra-btn" onClick={() => { closeCardMenu(); resetView() }}>Restablecer vista</button>
             <button className="deck-extra-btn" onClick={() => { setTeamVisible(v => !v); closeCardMenu(); }} aria-pressed={!teamVisible}>{teamVisible ? 'Ocultar equipo' : 'Revelar equipo'}</button>
           </div>
+          
         </div>
       </div>
 
       {/* Surrender button moved to top-right of the overlay for easier access */}
       <button className="surrender-global-btn" onClick={onClose} aria-label="Rendirse">Rendirse</button>
 
-      <div className="gw-window">
+  <div className={`gw-window ${conflictAlert ? 'conflict-alert' : ''}`}>
+        {/* Single dynamic step button: advances through the day's steps internally */}
+        <div className="floating-controls" style={{ flexDirection: 'column', gap: 8 }}>
+          {!currentStep ? (
+            <button className="deck-extra-btn" onClick={() => { startGame() }}>Iniciar</button>
+          ) : (
+            <button className="deck-extra-btn" onClick={() => { nextStep() }}>Siguiente paso</button>
+          )}
+          <div style={{ color: '#cfe9f7', fontSize: 12, marginTop: 6 }}>
+            <div>Paso: {currentStep || '—'}</div>
+            <div>Viaje: {travelCount} • Cansancio: {fatigueCount} • Encuentros hoy: {encounterActionsToday}</div>
+          </div>
+        </div>
 
         <div className="gw-board">
           <div className="table-column">
@@ -924,8 +1223,10 @@ export default function GameWindow({ onClose }) {
               <div className="table-pan-inner" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}>
                 <div className="table-cards" ref={tableRef}>
                   {table.map((c, i) => {
+                const isAwaiting = !!c.awaitingDecision && !c.processedDecision && currentStep === 'decision'
+                const isSelected = selectedForDecision && selectedForDecision.id === c.id
                 return (
-                  <div className="table-slot" key={c.id || i}>
+                  <div className={`table-slot ${isAwaiting ? 'awaiting-decision' : ''} ${isSelected ? 'selected-decision' : ''}`} key={c.id || i} onClick={(e) => { e.stopPropagation(); if (panIgnoreClickRef.current) { return } if (gameOver) return; if (currentStep === 'decision' && isAwaiting) { setSelectedForDecision(c) ; return } openPreview(c, e) }}>
                         <Card
                           type={c.type}
                           risk={c.risk}
@@ -935,8 +1236,14 @@ export default function GameWindow({ onClose }) {
                           name={c.name}
                           img={c.img}
                           rot={0}
-                          onClick={(e) => { if (panIgnoreClickRef.current) { e.stopPropagation(); return } openPreview(c, e) }}
                         />
+                        {/* Decision overlay: show 'Conflicto' button when this card is selected during decision step */}
+                        {isAwaiting && isSelected && (
+                          <div className="decision-overlay" onClick={(ev) => { ev.stopPropagation() }}>
+                            <button className="deck-extra-btn" onClick={() => { showDecisionModal(c) }}>Conflicto</button>
+                            <button className="deck-extra-btn" style={{ marginLeft: 8 }} onClick={() => { setSelectedForDecision(null) }}>Cancelar</button>
+                          </div>
+                        )}
                       </div>
                 )
               })}
@@ -1109,31 +1416,41 @@ export default function GameWindow({ onClose }) {
           )}
         </div>
       </div>
-      {/* Discard pile modal */}
-      <div className={`card-modal-backdrop ${discardModalOpen ? 'show' : ''}`} onClick={() => setDiscardModalOpen(false)} role="dialog" aria-hidden={discardModalOpen ? 'false' : 'true'}>
+      {/* Decision roll modal (animated die used during pasoDecision) */}
+      <div className={`card-modal-backdrop ${decisionModalCard ? 'show' : ''}`} role="dialog" aria-hidden={decisionModalCard ? 'false' : 'true'} onClick={(e) => {
+        // don't allow closing while animation is active
+        if (isDecisionRolling) return
+        setDecisionModalCard(null)
+      }}>
         <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
-          <div style={{ width: 'min(520px, 92vw)', maxHeight: '70vh', overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#eaf5ff' }}>Cartas descartadas</h3>
-              <div style={{ color: '#cfe9f7' }}>{discardPile.length} total</div>
+          {decisionModalCard && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <Card name={decisionModalCard.name} img={decisionModalCard.img} type={decisionModalCard.type} risk={decisionModalCard.risk} conflict={decisionModalCard.conflict} rot={0} />
+              <button className={`recruit-die`} aria-label="Tirada de decisión" disabled={isDecisionRolling} onClick={async () => {
+                // start the animated roll and then resolve the decision for this card
+                if (isDecisionRolling) return
+                const res = await startDecisionRoll()
+                if (res && res.card) resolveDecisionForCard(res.card, res.final)
+              }}>
+                {isDecisionRolling ? (decisionRollResult || '...') : '🎲'}
+              </button>
+              <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>
+                Resolviendo decisión para {decisionModalCard.name || 'Personaje'}...
+              </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-              {discardPile.length === 0 ? (
-                <div style={{ color: '#cfe9f7' }}>No hay cartas descartadas</div>
-              ) : discardPile.map((c, i) => (
-                <div key={c.id || i} style={{ background: 'linear-gradient(180deg, rgba(12,20,24,0.06), rgba(10,14,18,0.04))', padding: 8, borderRadius: 8, border: '1px solid rgba(255,255,255,0.03)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <div style={{ width: 48, height: 68, borderRadius: 6, overflow: 'hidden', background: '#07111a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {c.img ? <img src={c.img} alt={c.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ color: '#eaf5ff', fontSize: 20 }}>🂠</div>}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontWeight: 700, color: '#eaf5ff' }}>{c.name || '(sin nombre)'}</div>
-                    <div style={{ fontSize: 12, color: '#cfe9f7' }}>{c.type || ''} {c.risk !== undefined ? `• R:${c.risk}` : ''}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="deck-extra-btn" onClick={() => setDiscardModalOpen(false)}>Cerrar</button>
+          )}
+        </div>
+      </div>
+      {/* Discard pile viewer removed per request */}
+      {/* Game over modal: shown when fatigueCount >= 6 and gameOver is true */}
+      <div className={`card-modal-backdrop ${gameOver ? 'show' : ''}`} role="dialog" aria-hidden={gameOver ? 'false' : 'true'} onClick={(e) => { /* block clicks outside to force explicit choice */ }}> 
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          <div style={{ width: 'min(420px, 92vw)', padding: 18, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+            <h2 style={{ margin: 0, color: '#ffd6d6' }}>Has alcanzado 6 de cansancio</h2>
+            <div style={{ color: '#e6eef6', textAlign: 'center' }}>Tus personajes están demasiado cansados. La partida ha terminado.</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+              <button className="deck-extra-btn" onClick={() => { try { window.location.reload() } catch (e) { /* fallback: reset game state if reload blocked */ } }}>Reiniciar partida</button>
+              <button className="deck-extra-btn" onClick={() => { if (onClose) onClose() }}>Salir</button>
             </div>
           </div>
         </div>

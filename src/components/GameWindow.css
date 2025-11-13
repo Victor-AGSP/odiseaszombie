@@ -206,6 +206,94 @@
   -webkit-perspective: 300px;
 }
 .table-slot .card-root { transform-origin: center center; /* allow card-root to determine its own size */ }
+/* Visual indicator for characters awaiting decision: red outline */
+.table-slot.awaiting-decision {
+  /* ensure slot is positioned so the pseudo-element can overlay the transformed card */
+  position: relative;
+}
+.table-slot.awaiting-decision .card-root {
+  /* keep a subtle inner halo on the card itself */
+  box-shadow: 0 6px 18px rgba(2,6,12,0.28), inset 0 0 0 1px rgba(255,80,80,0.06);
+  border-radius: 8px;
+  position: relative; /* establish stacking context so pseudo-element can sit above */
+  z-index: 1;
+}
+
+/* Strong visible halo drawn from the slot (not the transformed card) so it remains visible
+   even when the card uses perspective/3D transforms. The pseudo-element is placed above
+   the card and uses a soft red glow and a ring to make the conflict state obvious. */
+.table-slot.awaiting-decision::after {
+  /* remove slot-level halo so the red border can be drawn with the card's own
+     pseudo-element and therefore follow the card's 3D perspective. Keep this
+     pseudo-element present but transparent to avoid layout shifts. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: transparent;
+}
+
+/* Overlay with conflict button shown when a card is selected during decision */
+.decision-overlay {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 4000;
+}
+
+/* When the player attempts to advance while conflicts remain, briefly highlight
+   awaiting cards with an opaque but non-glaring border to draw attention. The
+   .conflict-alert class is toggled on the .gw-window container from JS. */
+.gw-window.conflict-alert .table-slot.awaiting-decision .card-inner::after {
+  border-color: rgba(255,90,90,0.95);
+  box-shadow: 0 10px 30px rgba(255,80,80,0.18), 0 0 36px rgba(255,60,60,0.08);
+  transform: translateZ(3px) scale(1.02);
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  animation: conflict-alert-fade 700ms ease-in-out;
+}
+
+@keyframes conflict-alert-fade {
+  0% { transform: translateZ(3px) scale(1.00); box-shadow: 0 6px 18px rgba(255,80,80,0.12); }
+  40% { transform: translateZ(3px) scale(1.06); box-shadow: 0 18px 46px rgba(255,70,70,0.20); }
+  100% { transform: translateZ(3px) scale(1.00); box-shadow: 0 8px 22px rgba(255,70,70,0.14); }
+}
+
+/* Apply a vivid red outline on the card's own pseudo-element so it transforms
+   together with the card (perspective/3D). This makes the red border visually
+   consistent with the card tilt/rotate. */
+.table-slot.awaiting-decision .card-inner::after {
+  border: 2px solid rgba(255,80,80,0.95);
+  /* keep the outline close to the card surface so it doesn't look lifted */
+  box-shadow: 0 6px 16px rgba(255,80,80,0.16), 0 0 20px rgba(255,60,60,0.05);
+  transform: translateZ(3px);
+}
+
+/* Make the in-card border stronger and add a gentle pulse when the slot/card is selected */
+.table-slot.awaiting-decision .card-root .card-inner::after {
+  border-width: 3px;
+  border-color: rgba(255,60,60,0.98);
+  /* reduce vertical offset so the glow appears more even with the card surface */
+  box-shadow: 0 8px 22px rgba(255,70,70,0.18), 0 0 28px rgba(255,50,50,0.07);
+  transform: translateZ(3px);
+}
+
+.table-slot.selected-decision .card-root .card-inner::after,
+.table-slot.awaiting-decision.selected-decision .card-root .card-inner::after {
+  border-color: rgba(255,40,40,1);
+  box-shadow: 0 12px 36px rgba(255,50,50,0.24), 0 0 44px rgba(255,40,40,0.10);
+  transform: translateZ(3px);
+  animation: conflict-pulse 1400ms ease-in-out infinite;
+}
+
+@keyframes conflict-pulse {
+  0% { box-shadow: 0 12px 36px rgba(255,60,60,0.20), 0 0 40px rgba(255,50,50,0.10); }
+  50% { box-shadow: 0 22px 56px rgba(255,50,50,0.30), 0 0 64px rgba(255,40,40,0.16); }
+  100% { box-shadow: 0 12px 36px rgba(255,60,60,0.20), 0 0 40px rgba(255,50,50,0.10); }
+}
 /* allow Personaje cards to be landscape inside slots - sizing comes from Card.css */
 /* no explicit forced size for personaje here; Card.css controls dimensions */
 .table-pan { overflow: hidden; width: 100%; display:flex; flex-direction:column; justify-content:flex-start; align-items:stretch; cursor: grab; flex: 1 1 auto; min-height: 0 }
