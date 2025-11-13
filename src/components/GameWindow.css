@@ -262,6 +262,62 @@
   100% { transform: translateZ(3px) scale(1.00); box-shadow: 0 8px 22px rgba(255,70,70,0.14); }
 }
 
+/* Initiative chooser slider: appears to the right of the preview modal on larger screens,
+   or below on small screens. Use transform for smooth entrance. */
+.initiative-slider {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 12px);
+  width: 360px;
+  max-width: 42vw;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(8,12,16,0.98), rgba(12,16,20,0.95));
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  padding: 6px;
+  overflow: auto;
+  transform: translateX(8px) scale(0.99);
+  opacity: 0;
+  transition: transform 220ms ease, opacity 220ms ease;
+  z-index: 99999;
+}
+.initiative-slider.open { transform: translateX(0) scale(1); opacity: 1 }
+
+/* Make the initiative option cards much smaller inside the chooser popup so they
+   appear as compact thumbnails. Use !important sparingly to override Card.css
+   sizing rules that apply to modal previews. */
+.initiative-slider .initiative-option {
+  padding: 16px 18px;
+  border-radius: 8px;
+  min-width: 300px; /* increased to be much larger per request */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.initiative-slider .initiative-option > div { width: 300px !important; }
+.initiative-slider .initiative-option .card-root { width: 300px !important; height: auto !important; max-height: 460px !important; }
+.initiative-slider .initiative-option .card-inner { height: auto !important; }
+.initiative-slider .initiative-option .card-art-img { width: 100% !important; height: auto !important; object-fit: cover !important; }
+
+/* Match button sizing if any remain; buttons will be removed by JSX but keep safe styles */
+.initiative-slider .initiative-option .deck-extra-btn { padding: 12px 14px; font-size: 1.05rem }
+
+@media (max-width: 780px) {
+  .initiative-slider .initiative-option { min-width: 240px }
+  .initiative-slider .initiative-option > div { width: 240px !important }
+  .initiative-slider .initiative-option .card-root { width: 240px !important; max-height: 360px !important }
+}
+
+@media (max-width: 780px) {
+  .initiative-slider { position: static; width: 100%; max-width: 100%; left: auto; top: auto; transform: none; opacity: 1; margin-top: 10px; }
+}
+
+/* Smooth movement for options when hovering: base override for initiative-option */
+.initiative-slider .initiative-option { transition: transform 220ms cubic-bezier(.2,.9,.3,1), box-shadow 220ms ease }
+.initiative-slider .initiative-option:hover { z-index: 30; }
+
 /* Apply a vivid red outline on the card's own pseudo-element so it transforms
    together with the card (perspective/3D). This makes the red border visually
    consistent with the card tilt/rotate. */

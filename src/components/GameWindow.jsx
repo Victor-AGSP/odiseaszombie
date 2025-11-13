@@ -23,9 +23,21 @@ export default function GameWindow({ onClose }) {
   // start with a sample Evento and a sample Iniciativa so UI shows the slots
   const [playerEvents, setPlayerEvents] = useState([])
   const [playerTalents, setPlayerTalents] = useState([])
+  const [availableInitiatives, setAvailableInitiatives] = useState([])
+  // activeIniciativaId helps keep the displayed iniciativa in sync immediately
+  const [activeIniciativaId, setActiveIniciativaId] = useState(null)
   // derive a single talento card (if any) for the team slot
   const talentoCard = (playerTalents && playerTalents.find && playerTalents.find(p => p.type === 'talento')) || null
-  const iniciativaCard = (playerTalents && playerTalents.find && playerTalents.find(p => p.type === 'iniciativa')) || null
+  const iniciativaCard = (() => {
+    const byPlayer = (playerTalents && playerTalents.find && playerTalents.find(p => p.type === 'iniciativa')) || null
+    if (activeIniciativaId) {
+      const fromPlayer = (playerTalents || []).find(p => p.id === activeIniciativaId) || null
+      if (fromPlayer) return fromPlayer
+      const fromAvail = (availableInitiatives || []).find(p => p.id === activeIniciativaId) || null
+      if (fromAvail) return fromAvail
+    }
+    return byPlayer
+  })()
   const [days, setDays] = useState(0)
   const [zombies, setZombies] = useState(0)
   const [log, setLog] = useState([])
@@ -42,6 +54,8 @@ export default function GameWindow({ onClose }) {
   const [menuCard, setMenuCard] = useState(null)
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
   const [previewCard, setPreviewCard] = useState(null)
+  const [showInitiativeOptions, setShowInitiativeOptions] = useState(false)
+  const [hoveredInitiativeIndex, setHoveredInitiativeIndex] = useState(null)
   // Side-slot carousel state (mobile swipe between Evento / Talento / Iniciativa)
   const [sideIndex, setSideIndex] = useState(0) // 0:evento,1:talento,2:iniciativa
   const sideTouchStartRef = useRef(null)
@@ -203,8 +217,10 @@ export default function GameWindow({ onClose }) {
           ;[newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]]
         }
 
-        if (!cancelled) {
+          if (!cancelled) {
           if (newDeck.length > 0) setDeck(newDeck)
+          // store available iniciativas (they come from the excel but are not part of the playable deck)
+          setAvailableInitiatives(iniciativas || [])
           // remove any Evento from player's slot and instead give one talento + one iniciativa randomly
           const chosenTalento = talentos.length ? talentos[Math.floor(Math.random() * talentos.length)] : null
           const chosenIniciativa = iniciativas.length ? iniciativas[Math.floor(Math.random() * iniciativas.length)] : null
@@ -212,6 +228,8 @@ export default function GameWindow({ onClose }) {
           if (chosenTalento) pt.push(chosenTalento)
           if (chosenIniciativa) pt.push(chosenIniciativa)
           setPlayerTalents(pt)
+          // ensure the active iniciativa id matches the chosen one so UI shows it immediately
+          try { if (chosenIniciativa && typeof setActiveIniciativaId === 'function') setActiveIniciativaId(chosenIniciativa.id) } catch (e) {}
           setPlayerEvents([])
         }
         } catch (err) {
@@ -468,6 +486,45 @@ export default function GameWindow({ onClose }) {
       // fallback to instant preview if animation fails
       console.error('Preview animation failed', err)
     }
+  }
+
+  // Replace current iniciativa with a selected iniciativa card from the deck
+  function changeInitiativeTo(newCard) {
+    if (!newCard) return
+
+    // Only allow swapping iniciativa during Preparación
+    if (currentStep !== 'preparacion') {
+      pushLog('Sólo puedes cambiar la iniciativa durante el Paso de Preparación')
+      // close the chooser to avoid confusion
+      setShowInitiativeOptions(false)
+      return
+    }
+
+    const current = iniciativaCard
+
+  // Keep the availableInitiatives unchanged so all other iniciativas remain selectable
+  // Discard the previous iniciativa (the user requested the old iniciativa be discarded)
+  if (current) addToDiscard(current)
+
+    // Replace iniciativa in playerTalents: remove any previous iniciativa and add the new one
+    setPlayerTalents(pt => {
+      const withoutOldInitiative = (pt || []).filter(x => !(x && x.type === 'iniciativa'))
+      return [...withoutOldInitiative, newCard]
+    })
+
+    // make sure the UI picks up the change immediately
+    try { setActiveIniciativaId(newCard.id) } catch (e) {}
+
+    // Ensure the newly selected iniciativa doesn't remain duplicated in other collections
+    setDeck(d => (d || []).filter(x => !(x && x.id === newCard.id)))
+    setHand(h => (h || []).filter(x => !(x && x.id === newCard.id)))
+    setTable(t => (t || []).filter(x => !(x && x.id === newCard.id)))
+
+    pushLog(`Iniciativa cambiada: ahora ${newCard.name || 'Iniciativa'}`)
+
+    // Close chooser and the preview popup so the modal disappears upon selection
+    setShowInitiativeOptions(false)
+    setPreviewCard(null)
   }
 
   function closePreview() {
@@ -782,6 +839,13 @@ export default function GameWindow({ onClose }) {
     window.addEventListener('keydown', stopEsc, true)
     return () => window.removeEventListener('keydown', stopEsc, true)
   }, [previewCard])
+
+  // Close the iniciativa chooser if the game step changes away from preparacion
+  useEffect(() => {
+    if (currentStep !== 'preparacion' && showInitiativeOptions) {
+      setShowInitiativeOptions(false)
+    }
+  }, [currentStep, showInitiativeOptions])
 
   function startPan(e) {
     e.stopPropagation && e.stopPropagation()
@@ -1369,8 +1433,48 @@ export default function GameWindow({ onClose }) {
       <div className={`card-modal-backdrop ${previewCard ? 'show' : ''}`} onClick={() => closePreview()} role="dialog" aria-hidden={previewCard ? 'false' : 'true'}>
         <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
           {previewCard && (
-            <div>
-              <Card name={previewCard.name} img={previewCard.img} type={previewCard.type} risk={previewCard.risk} conflict={previewCard.conflict} rot={0} />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <Card name={previewCard.name} img={previewCard.img} type={previewCard.type} risk={previewCard.risk} conflict={previewCard.conflict} rot={0} />
+                {/* If this is an iniciativa during preparacion, allow swapping with other iniciativas from the excel */}
+                {currentStep === 'preparacion' && previewCard.type === 'iniciativa' && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button className="deck-extra-btn" onClick={() => setShowInitiativeOptions(s => !s)}>{showInitiativeOptions ? 'Cerrar' : 'Cambiar'}</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Sliding chooser panel shown beside the preview when requested */}
+              <div className={`initiative-slider ${showInitiativeOptions ? 'open' : ''}`} role="region" aria-hidden={!showInitiativeOptions} onClick={(e) => e.stopPropagation()}>
+                <div style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontWeight: 800, color: '#eaf5ff' }}>Iniciativas disponibles</div>
+                  <button className="deck-extra-btn" onClick={() => setShowInitiativeOptions(false)}>Cerrar</button>
+                </div>
+                <div style={{ padding: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+                  {(!availableInitiatives || availableInitiatives.filter(d => d.type === 'iniciativa').filter(d => d.id !== previewCard.id).length === 0) ? (
+                    <div style={{ color: '#cfe9f7' }}>No hay iniciativas disponibles</div>
+                  ) : (() => {
+                    const candidates = (availableInitiatives || []).filter(d => d.type === 'iniciativa').filter(d => d.id !== previewCard.id)
+                    return candidates.map((c, i) => {
+                      // compute shift based on hovered index so other options move aside
+                      let shift = 0
+                      if (hoveredInitiativeIndex !== null) {
+                        if (i < hoveredInitiativeIndex) shift = -36
+                        else if (i > hoveredInitiativeIndex) shift = 36
+                        else shift = 0
+                      }
+                      const style = { display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', padding: 6, borderRadius: 8, border: '1px solid rgba(255,255,255,0.04)', background: 'linear-gradient(180deg, rgba(10,14,18,0.02), rgba(8,10,12,0.02))', transform: `translateX(${shift}px) scale(${hoveredInitiativeIndex === i ? 1.04 : 1})`, transition: 'transform 220ms cubic-bezier(.2,.9,.3,1)' }
+                      return (
+                        <div key={c.id || i} className="initiative-option" style={style} onMouseEnter={() => setHoveredInitiativeIndex(i)} onMouseLeave={() => setHoveredInitiativeIndex(null)}>
+                                  <div style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); changeInitiativeTo(c) }}>
+                                    <Card name={c.name} img={c.img} type={c.type} risk={c.risk} conflict={c.conflict} rot={0} />
+                                  </div>
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
+              </div>
             </div>
           )}
         </div>
