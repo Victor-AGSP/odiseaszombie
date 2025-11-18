@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './GameWindow.css'
 import Card from './Card.jsx'
-import * as XLSX from 'xlsx'
 
 // Generate a 30-card sample deck (no visible names). Mix types and stats for variety.
 // Helper to normalize filename: lowercase, remove diacritics and non-alphanumerics
@@ -83,17 +82,20 @@ export default function GameWindow({ onClose }) {
     }
   }, [])
 
-  // Load cards from public/datacards.xlsx and build deck + player slots
+  // Load cards from JSON files in public/ and build deck + player slots
   useEffect(() => {
     let cancelled = false
     async function loadExcel() {
       try {
-        const resp = await fetch('/datacards.xlsx')
-        if (!resp.ok) throw new Error('No se pudo leer datacards.xlsx')
-        const ab = await resp.arrayBuffer()
-        const wb = XLSX.read(new Uint8Array(ab), { type: 'array' })
-        const firstSheet = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' })
+        // fetch the four JSON files in parallel
+        const [pRes, eRes, tRes, iRes] = await Promise.all([
+          fetch('/PERSONAJES.json'),
+          fetch('/EVENTOS.json'),
+          fetch('/TALENTOS.json'),
+          fetch('/INICIATIVAS.json')
+        ])
+        if (!pRes.ok || !eRes.ok || !tRes.ok || !iRes.ok) throw new Error('No se pudieron leer los archivos JSON de datos')
+        const [pJson, eJson, tJson, iJson] = await Promise.all([pRes.json(), eRes.json(), tRes.json(), iRes.json()])
 
         const personajes = []
         const eventos = []
@@ -104,15 +106,14 @@ export default function GameWindow({ onClose }) {
         async function findExistingImage(baseName) {
           const candidates = []
           const n1 = normalizeFileName(baseName)
-          // also try a diacritics-removed version but preserving spaces (some files use spaces)
-          const baseNoDiacritics = baseName && baseName.normalize ? baseName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : baseName.toLowerCase()
+          const baseNoDiacritics = baseName && baseName.normalize ? baseName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : String(baseName || '').toLowerCase()
           const variants = [
-            n1, // normalized (underscores)
+            n1,
             n1.replace(/_/g, '-'),
             n1.replace(/_/g, ''),
-            baseName.toLowerCase().replace(/\s+/g, '_'),
-            baseNoDiacritics, // preserves spaces
-            encodeURIComponent(baseNoDiacritics) // URL-encoded (spaces -> %20)
+            String(baseName || '').toLowerCase().replace(/\s+/g, '_'),
+            baseNoDiacritics,
+            encodeURIComponent(baseNoDiacritics)
           ]
           const exts = ['bmp', 'png', 'jpg', 'jpeg']
           const prefixes = ['', '/images']
@@ -123,10 +124,8 @@ export default function GameWindow({ onClose }) {
               }
             }
           }
-          // try candidates in order and return first that responds OK
           for (let c of candidates) {
             try {
-              // Try to actually load the image via an Image object so we know the browser can decode it
               const ok = await new Promise((resolve) => {
                 const img = new Image()
                 img.onload = () => resolve(true)
@@ -134,61 +133,84 @@ export default function GameWindow({ onClose }) {
                 img.src = c
               })
               if (ok) return c
-            } catch (e) {
-              // ignore and try next candidate
-            }
+            } catch (e) {}
           }
-          // nothing found
-          console.debug('findExistingImage: no candidate matched for', baseName, 'tried candidates:', candidates)
+          console.debug('findExistingImage: no candidate matched for', baseName)
           return null
         }
 
         const imgPromises = []
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i]
-          // support both header names 'Nombre','Tipo','Json' or lowercased
-          const nombre = row.Nombre || row.nombre || row.Name || row.name || ''
-          const tipoRaw = row.Tipo || row.tipo || row.Type || row.type || ''
-          const jsonRaw = row.Json || row.json || ''
-          const tipo = String(tipoRaw).trim().toLowerCase()
-          const id = `r-${i}`
-          // Attempt to resolve an existing bmp path. We'll try several candidate patterns.
-          const candidateBase = String(nombre || '')
-          // findExistingImage is async; for now set placeholder and resolve below
-          let img = null
-          // parse JSON details if present
-          let parsed = {}
-          try { parsed = jsonRaw ? (typeof jsonRaw === 'object' ? jsonRaw : JSON.parse(String(jsonRaw))) : {} } catch (e) { parsed = {} }
 
-          const card = {
-            id,
-            name: nombre,
-            type: tipo.startsWith('p') || tipo === 'personaje' ? 'personaje' : tipo.startsWith('e') || tipo === 'evento' ? 'evento' : tipo.startsWith('t') || tipo === 'talento' ? 'talento' : tipo.startsWith('i') || tipo === 'iniciativa' ? 'iniciativa' : 'otro',
-            img,
-            // map JSON fields: Amenaza => risk, Conflicto => conflict
-            risk: parsed && (parsed.Amenaza !== undefined ? Number(parsed.Amenaza) : parsed.Amenaza) || (parsed.Amenaza === 0 ? 0 : (parsed.amenaza !== undefined ? Number(parsed.amenaza) : 0)),
-            conflict: parsed && (parsed.Conflicto !== undefined ? Number(parsed.Conflicto) : parsed.Conflicto) || (parsed.Conflicto === 0 ? 0 : (parsed.conflicto !== undefined ? Number(parsed.conflicto) : 0))
+        // Map personajes from PERSONAJES.json
+        if (pJson && pJson.Personajes) {
+          for (const [name, obj] of Object.entries(pJson.Personajes)) {
+            const idNum = obj && obj.id !== undefined ? obj.id : null
+            const card = {
+              id: idNum !== null ? `personaje-${idNum}` : `personaje-${normalizeFileName(name)}`,
+              name,
+              type: 'personaje',
+              img: null,
+              risk: obj && (obj.Amenaza !== undefined ? Number(obj.Amenaza) : (obj.amenaza !== undefined ? Number(obj.amenaza) : 0)),
+              conflict: obj && (obj.Conflicto !== undefined ? Number(obj.Conflicto) : (obj.conflicto !== undefined ? Number(obj.conflicto) : 0)),
+              keywords: obj && obj.keywords ? obj.keywords : []
+            }
+            personajes.push(card)
+            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
           }
-
-          if (card.type === 'personaje') personajes.push(card)
-          else if (card.type === 'evento') eventos.push(card)
-          else if (card.type === 'talento') talentos.push(card)
-          else if (card.type === 'iniciativa') iniciativas.push(card)
-          // enqueue promise to resolve image path for this card
-          imgPromises.push(
-            (async () => {
-              try {
-                const found = await findExistingImage(candidateBase)
-                return { id: card.id, found }
-              } catch (e) {
-                return { id: card.id, found: null }
-              }
-            })()
-          )
         }
-        // await image resolution for all rows before constructing deck/state so React sees imgs
+
+        // Map eventos
+        if (eJson && eJson.Eventos) {
+          for (const [name, obj] of Object.entries(eJson.Eventos)) {
+            const card = {
+              id: `evento-${normalizeFileName(name)}`,
+              name,
+              type: 'evento',
+              img: null,
+              risk: 0,
+              conflict: 0,
+              keywords: obj && obj.keywords ? obj.keywords : []
+            }
+            eventos.push(card)
+            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
+          }
+        }
+
+        // Map talentos
+        if (tJson && tJson.Talentos) {
+          for (const [name, obj] of Object.entries(tJson.Talentos)) {
+            const card = {
+              id: `talento-${normalizeFileName(name)}`,
+              name,
+              type: 'talento',
+              img: null,
+              risk: 0,
+              conflict: 0,
+              keywords: obj && obj.keywords ? obj.keywords : []
+            }
+            talentos.push(card)
+            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
+          }
+        }
+
+        // Map iniciativas
+        if (iJson && iJson.Iniciativa) {
+          for (const [name, obj] of Object.entries(iJson.Iniciativa)) {
+            const card = {
+              id: `iniciativa-${normalizeFileName(name)}`,
+              name,
+              type: 'iniciativa',
+              img: null,
+              risk: 0,
+              conflict: 0,
+              keywords: obj && obj.keywords ? obj.keywords : []
+            }
+            iniciativas.push(card)
+            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
+          }
+        }
+
         const imgsResolved = await Promise.all(imgPromises)
-        // apply found images to cards
         for (const r of imgsResolved) {
           if (!r || !r.id) continue
           const allLists = [personajes, eventos, talentos, iniciativas]
@@ -196,19 +218,8 @@ export default function GameWindow({ onClose }) {
             const c = list.find(x => x.id === r.id)
             if (c) {
               if (r.found) c.img = r.found
-              else console.warn(`Carta sin imagen encontrada para: ${c.name} (buscado como .bmp)`)
+              else c.img = `/${normalizeFileName(c.name)}.bmp`
               break
-            }
-          }
-        }
-
-        // If any card still lacks an img, try the exact normalized path (user said images follow this naming)
-        const allLists2 = [personajes, eventos, talentos, iniciativas]
-        for (const list of allLists2) {
-          for (const c of list) {
-            if (!c.img && c.name) {
-              const candidate = `/${normalizeFileName(c.name)}.bmp`
-              c.img = candidate
             }
           }
         }
@@ -220,24 +231,22 @@ export default function GameWindow({ onClose }) {
           ;[newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]]
         }
 
-          if (!cancelled) {
+        if (!cancelled) {
           if (newDeck.length > 0) setDeck(newDeck)
-          // store available iniciativas (they come from the excel but are not part of the playable deck)
+          // store available iniciativas (they come from the data but are not part of the playable deck)
           setAvailableInitiatives(iniciativas || [])
-          // remove any Evento from player's slot and instead give one talento + one iniciativa randomly
+          // give one talento + one iniciativa randomly
           const chosenTalento = talentos.length ? talentos[Math.floor(Math.random() * talentos.length)] : null
           const chosenIniciativa = iniciativas.length ? iniciativas[Math.floor(Math.random() * iniciativas.length)] : null
           const pt = []
           if (chosenTalento) pt.push(chosenTalento)
           if (chosenIniciativa) pt.push(chosenIniciativa)
           setPlayerTalents(pt)
-          // ensure the active iniciativa id matches the chosen one so UI shows it immediately
           try { if (chosenIniciativa && typeof setActiveIniciativaId === 'function') setActiveIniciativaId(chosenIniciativa.id) } catch (e) {}
           setPlayerEvents([])
         }
-        } catch (err) {
-        console.error('Error loading datacards.xlsx:', err)
-        // fallback: keep deck empty to avoid allocating sample objects
+      } catch (err) {
+        console.error('Error loading JSON data:', err)
         setDeck([])
         setPlayerTalents([])
         setPlayerEvents([])
@@ -246,6 +255,18 @@ export default function GameWindow({ onClose }) {
     loadExcel()
     return () => { cancelled = true }
   }, [])
+
+  // Loading overlay state: show a short loader before revealing the game UI
+  const [showLoading, setShowLoading] = useState(true)
+  const [loadingFade, setLoadingFade] = useState(false)
+  useEffect(() => {
+    const visibleMs = 2000
+    const fadeMs = 420
+    const t1 = setTimeout(() => setLoadingFade(true), visibleMs)
+    const t2 = setTimeout(() => setShowLoading(false), visibleMs + fadeMs)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
+
   // recruit modal state: when a Personaje is revealed, show this modal and let user roll a die
   const [recruitCard, setRecruitCard] = useState(null)
   const [isRolling, setIsRolling] = useState(false)
@@ -1298,7 +1319,17 @@ export default function GameWindow({ onClose }) {
   )
 
   return (
-  <div className="gw-root" role="dialog" aria-modal="true" onClick={() => { closeCardMenu(); setSelectedForDecision(null) }}>
+    <>
+      {showLoading && (
+        <div className={`loading-overlay ${loadingFade ? 'fade-out' : ''}`} role="status" aria-live="polite">
+          <div className="loading-box">
+            <div className="loading-spinner" />
+            <div className="loading-label">Cargando...</div>
+            <div className="loading-sub">Preparando la partida</div>
+          </div>
+        </div>
+      )}
+      <div className={`gw-root ${(showLoading && !loadingFade) ? 'hidden-during-loading' : ''}`} role="dialog" aria-modal="true" onClick={() => { closeCardMenu(); setSelectedForDecision(null) }}>
       <div className="gw-overlay-stats">
         <div className="stats-box">
           <div>dias</div>
@@ -1621,5 +1652,6 @@ export default function GameWindow({ onClose }) {
         </div>
       </div>
     </div>
+    </>
   )
 }

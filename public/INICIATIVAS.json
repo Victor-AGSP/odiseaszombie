@@ -1,0 +1,13 @@
+{
+  "Iniciativa": {
+    "Lider Cautelosa": {
+      "keywords": ["RISK_MOD(-2)", "ELIM_MOD(-5)"]
+    },
+    "Lider Despiadado": {
+      "keywords": ["DISCARD_CHARACTER", "ELIM_BY_CONFLICT_VALUE", "TIRED_MOD(X)"]
+    },
+    "Lider Entusiasta": {
+      "keywords": ["ELIM_MOD(2)", "DOUBLE_TIRED_GAIN"]
+    }
+  }
+}

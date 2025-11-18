@@ -23,6 +23,46 @@
 }
 
 /* -----------------------------
+  Loading overlay
+  ----------------------------- */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(2,4,6,0.92), rgba(6,8,10,0.98));
+  z-index: 99999;
+  transition: opacity 420ms var(--ease-landing), transform 420ms var(--ease-landing);
+  opacity: 1;
+}
+.loading-overlay.fade-out {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.995);
+  pointer-events: none;
+}
+.loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--soft-white);
+}
+.loading-spinner {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 6px solid rgba(255,255,255,0.08);
+  border-top-color: rgba(138,7,7,0.95);
+  animation: spin 900ms linear infinite;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.6);
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+.loading-label { font-weight: 700; font-size: 1.05rem; color: #dff4ff }
+.loading-sub { font-size: 0.92rem; color: rgba(223,244,255,0.85) }
+
+
+/* -----------------------------
   Container / Window
   ----------------------------- */
 .gw-root {
@@ -34,6 +74,19 @@
   background: linear-gradient(180deg, rgba(4,6,8,0.62), rgba(2,3,4,0.72));
   z-index: 2000;
   padding: 1rem;
+  opacity: 1;
+  transition: opacity 420ms var(--ease-landing);
+}
+
+/* Hide the main game root while the loading overlay is active so the background
+   is not visible even during the overlay fade-out transition. The overlay
+   itself sits above with a very high z-index. */
+.gw-root.hidden-during-loading {
+  /* Start fully transparent and non-interactive while the overlay is fully visible.
+     When the overlay starts fading (loadingFade true) this class is removed and
+     the gw-root will transition to opacity:1 to create a smooth cross-fade. */
+  opacity: 0;
+  pointer-events: none;
 }
 
 .gw-window {

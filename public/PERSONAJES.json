@@ -1,0 +1,130 @@
+{
+  "Personajes": {
+    "Angelica": {
+      "id": 1,
+      "Amenaza": 0,
+      "Conflicto": 5,
+      "keywords": ["CANNOT_BE_AFFECTED_BY_EVENTS", "CANNOT_RECOVER", "ELIM_MOD(1)"]
+    },
+    "Aurora": {
+      "id": 2,
+      "Amenaza": -3,
+      "Conflicto": 4,
+      "keywords": ["DICE(1,2):TIRED_MOD(1)", "IF_INITIATIVE: BECOME_ERRANT"]
+    },
+    "Blanca Romero": {
+      "id": 3,
+      "Amenaza": 0,
+      "Conflicto": 2,
+      "keywords": ["SEND_TO_ENCOUNTER_DECK", "DISCARD_EVENT"]
+    },
+    "Bruce Vergara": {
+      "id": 4,
+      "Amenaza": 1,
+      "Conflicto": 3,
+      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "ELIM_EQUALS_TIRED"]
+    },
+    "Coronel Navarro": {
+      "id": 5,
+      "Amenaza": -2,
+      "Conflicto": 5,
+      "keywords": ["ALLY_STEAL", "OTHER_RISK_MOD(1)"]
+    },
+    "Cynthia": {
+      "id": 6,
+      "Amenaza": 1,
+      "Conflicto": 1,
+      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "DISCARD_TO_EFFECT(DISCARD_EVENT)"]
+    },
+    "Daging": {
+      "id": 7,
+      "Amenaza": 5,
+      "Conflicto": 5,
+      "keywords": ["DICE(1,2):DISCARD_LOW_CONFLICT", "PROTECT_DISCARD"]
+    },
+    "Daniel": {
+      "id": 8,
+      "Amenaza": 6,
+      "Conflicto": 1,
+      "keywords": ["DICE(3,5,6):SELF_DISCARD", "ADD_ENCOUNTER_ACTION(2)", "CANNOT_DEFEND"]
+    },
+    "Eva": {
+      "id": 9,
+      "Amenaza": 3,
+      "Conflicto": 4,
+      "keywords": ["DICE(3):TIRED_MOD(1)", "IF_UNIQUE_ALLY:IGNORE_FIRST_TIRED"]
+    },
+    "Fahri": {
+      "id": 10,
+      "Amenaza": 2,
+      "Conflicto": 1,
+      "keywords": ["DICE(3):RISK_MOD(3)", "ERRANT_CONFLICT_MOD(-1)"]
+    },
+    "Frieda": {
+      "id": 11,
+      "Amenaza": -1,
+      "Conflicto": 4,
+      "keywords": ["DICE(6):CONFLICT_MOD(-1)", "DISCARD_TO_EFFECT(ELIM_6_ZOMBIES)", "BECOME_ERRANT_OTHERS"]
+    },
+    "Gertrudis": {
+      "id": 12,
+      "Amenaza": 5,
+      "Conflicto": 4,
+      "keywords": ["DICE(3,4):RISK_MOD(2)", "IF_ALLIES_2_PLUS:BECOME_ERRANT"]
+    },
+    "Hilibka": {
+      "id": 13,
+      "Amenaza": 6,
+      "Conflicto": 4,
+      "keywords": ["PROTECT_DISCARD", "RISK_MOD(2)"]
+    },
+    "Inyama el sacerdote": {
+      "id": 14,
+      "Amenaza": 7,
+      "Conflicto": 6,
+      "keywords": ["DICE(5,6):CONFLICT_MOD(1)", "PROTECT_DISCARD"]
+    },
+    "Jaime": {
+      "id": 15,
+      "Amenaza": 5,
+      "Conflicto": 3,
+      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "IF_THREAT_X_OR_MORE(10):SEND_TO_ENCOUNTER_DECK"]
+    },
+    "Juana del Carmen": {
+      "id": 16,
+      "Amenaza": 4,
+      "Conflicto": 1,
+      "keywords": ["IF_DISCARD:ALLY_ERRANT", "CANNOT_DEFEND"]
+    },
+    "Kevin Brayatan": {
+      "id": 17,
+      "Amenaza": 1,
+      "Conflicto": 3,
+      "keywords": ["OTHER_RISK_MOD(1)", "CANNOT_IGNORE_TIRED"]
+    },
+    "Leonor": {
+      "id": 18,
+      "Amenaza": -3,
+      "Conflicto": 5,
+      "keywords": ["DEFENSE_STEP(1,2)", "IF_TIRED_AND_TIRED_3:BECOME_ERRANT"]
+    },
+    "Lorenzo": {
+      "id": 19,
+      "Amenaza": 1,
+      "Conflicto": 2,
+      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "CHANGE_RESULT(decision)"]
+    },
+    "Luisa Zambrano": {
+      "id": 20,
+      "Amenaza": 2,
+      "Conflicto": 4,
+      "keywords": ["IF_RAFA_ALLY:ALLY_SELF", "DISCARD_TO_EFFECT(DISCARD_EVENT)"]
+    },
+    "Magdalena": {
+      "id": 21,
+      "Amenaza": 1,
+      "Conflicto": 3,
+      "keywords": ["ON_INITIATIVE_CHANGE:ALLY_SELF", "SELF_RISK_MOD_PER_ALLY"]
+    }
+  }
+}

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import './App.css'
 
 export default function MainMenu({ onSelect }) {
-  const menuItems = ['Nuevo juego', 'Cargar partida', 'Opciones', 'Créditos', 'Salir']
+  const menuItems = ['Jugar', 'Multiplayer', 'Opciones', 'Créditos', 'Salir']
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [animateIn, setAnimateIn] = useState(true)
 

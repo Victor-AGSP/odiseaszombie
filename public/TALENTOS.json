@@ -1,0 +1,39 @@
+{
+  "Talentos": {
+    "Deportivo": {
+      "keywords": [
+        "CHOOSE_OPTION(3)",
+        "IGNORE_FIRST_TIRED",
+        "ELIM_MOD(1)",
+        "CONFLICT_MOD(2)"
+      ]
+    },
+    "Espiritual": {
+      "keywords": [
+        "CHOOSE_OPTION(3)",
+        "CHANGE_RESULT(decision)",
+        "CONFLICT_MOD(-2)",
+        "RISK_MOD(-1)"
+      ]
+    },
+    "Exploracion": {
+      "keywords": [
+        "CHOOSE_OPTION(3)",
+        "DEFENSE_STEP(1,1)",
+        "DEFENSE_STEP(3,2)",
+        "DEFENSE_STEP(5,3)"
+      ]
+    },
+    "Medicinal": {
+      "keywords": [
+        "CHOOSE_OPTION(3)",
+        "RECOVER_EXTRA_ALLY",
+        "REMOVE_TIRED(1)",
+        "REMOVE_TIRED(2)"
+      ]
+    },
+    "Sabotaje": {
+      "keywords": ["RANDOM_FOCUS"]
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "Eventos": {
+    "Amanecer de los muertos": {
+      "keywords": ["NO_ABILITY", "RISK_MOD(1)"]
+    },
+    "Caminata nocturna": {
+      "keywords": ["CANNOT_IGNORE_TIRED"]
+    },
+    "Camino equivocado": {
+      "keywords": ["IF_INITIATIVE", "TIRED_MOD(1)"]
+    },
+    "Comunidad virtuosa": {
+      "keywords": ["ELIM_MOD(1)", "IF_CONFLICT_X_OR_MORE(3)", "BECOME_ERRANT"]
+    },
+    "Grupo improvisado": {
+      "keywords": ["RISK_MOD(3)", "ELIM_MOD(3)"]
+    },
+    "Manipulacion social": {
+      "keywords": ["DISCARD_TO_EFFECT(CHANGE_RESULT(decision))"]
+    },
+    "Marcha frenetica": {
+      "keywords": ["DISCARD_TO_EFFECT(ELIM_MOD(999))", "TIRED_MOD(2)"]
+    },
+    "Pandilla infame": {
+      "keywords": ["RISK_MOD(1)", "TIRED_DOES_NOT_RECOVER"]
+    },
+    "Pausa necesaria": {
+      "keywords": ["DISCARD_TO_EFFECT(DISCARD_CHARACTER)", "NO_TRAVEL_TIRED"]
+    },
+    "Perder la fe": {
+      "keywords": ["CANNOT_CHANGE_RESULTS(all)"]
+    },
+    "Sabotaje": {
+      "keywords": ["RANDOM_FOCUS", "RISK_MOD(1)", "CANNOT_CHANGE_RESULTS(decision)", "CANNOT_DEFEND"]
+    }
+  }
+}

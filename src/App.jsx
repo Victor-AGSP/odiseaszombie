@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import './App.css'
 import MainMenu from './MainMenu.jsx'
 import GameWindow from './components/GameWindow.jsx'
+import Credits from './Credits.jsx'
 
 export default function App() {
   const [view, setView] = useState('menu') // 'menu' | 'game'
@@ -15,7 +16,9 @@ export default function App() {
   }, [view])
 
   function handleSelect(label) {
-    if (label === 'Nuevo juego') setView('game')
+    // Accept the new menu label 'Jugar' while keeping backwards compatibility
+    if (label === 'Jugar' || label === 'Nuevo juego') setView('game')
+    else if (label === 'Créditos' || label === 'Creditos') setView('credits')
     else console.log('Menu selected:', label)
   }
 
@@ -23,6 +26,7 @@ export default function App() {
     <div className="menu-page">
       {view === 'menu' && <MainMenu onSelect={handleSelect} />}
       {view === 'game' && <GameWindow onClose={() => setView('menu')} />}
+      {view === 'credits' && <Credits onClose={() => setView('menu')} />}
     </div>
   )
 }
