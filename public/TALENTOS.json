@@ -16,7 +16,7 @@
       "keywords": ["CHOOSE_OPTION(3)", "RECOVER_EXTRA_ALLY", "REMOVE_TIRED(1)", "REMOVE_TIRED(2)"],
       "oracle": "El usuario elige 1: (1) Puedes recuperar a un personaje aliado adicional. (2) Puedes reducir 1 contador de cansancio de hasta otros 2 jugadores. (3) Puedes reducir 2 contadores de cansancio de otro jugador."
     },
-    "Sabotaje (talento)": {
+    "Sabotaje": {
       "keywords": ["RANDOM_FOCUS"],
       "oracle": "Efecto de sabotaje (ver la lógica de enfoque aleatorio)."
     }
