@@ -102,44 +102,17 @@ export default function GameWindow({ onClose }) {
         const talentos = []
         const iniciativas = []
 
-        // small helper to test for image existence by trying candidate paths
-        async function findExistingImage(baseName) {
-          const candidates = []
-          const n1 = normalizeFileName(baseName)
+        // Instead of probing many filename variants (which generates many 404s),
+        // build a single predictable path for each card image. This reduces
+        // requests at startup and relies on the browser to load images when
+        // they're actually rendered. If a different naming convention is used
+        // in the future, consider adding a server-side mapping or storing the
+        // image path in the JSON data.
+        function getImagePath(baseName) {
+          if (!baseName) return null
           const baseNoDiacritics = baseName && baseName.normalize ? baseName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : String(baseName || '').toLowerCase()
-          const variants = [
-            n1,
-            n1.replace(/_/g, '-'),
-            n1.replace(/_/g, ''),
-            String(baseName || '').toLowerCase().replace(/\s+/g, '_'),
-            baseNoDiacritics,
-            encodeURIComponent(baseNoDiacritics)
-          ]
-          const exts = ['bmp']
-          const prefixes = ['/images']
-          for (const p of prefixes) {
-            for (const v of variants) {
-              for (const e of exts) {
-                candidates.push(`${p}/${v}.${e}`)
-              }
-            }
-          }
-          for (let c of candidates) {
-            try {
-              const ok = await new Promise((resolve) => {
-                const img = new Image()
-                img.onload = () => resolve(true)
-                img.onerror = () => resolve(false)
-                img.src = c
-              })
-              if (ok) return c
-            } catch (e) {}
-          }
-          console.debug('findExistingImage: no candidate matched for', baseName)
-          return null
+          return `/images/${encodeURIComponent(baseNoDiacritics)}.bmp`
         }
-
-        const imgPromises = []
 
         // Map personajes from PERSONAJES.json
         if (pJson && pJson.Personajes) {
@@ -154,8 +127,9 @@ export default function GameWindow({ onClose }) {
               conflict: obj && (obj.Conflicto !== undefined ? Number(obj.Conflicto) : (obj.conflicto !== undefined ? Number(obj.conflicto) : 0)),
               keywords: obj && obj.keywords ? obj.keywords : []
             }
+            // assign a single predictable image path (no probing)
+            card.img = getImagePath(name)
             personajes.push(card)
-            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
           }
         }
 
@@ -171,8 +145,8 @@ export default function GameWindow({ onClose }) {
               conflict: 0,
               keywords: obj && obj.keywords ? obj.keywords : []
             }
+            card.img = getImagePath(name)
             eventos.push(card)
-            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
           }
         }
 
@@ -188,8 +162,8 @@ export default function GameWindow({ onClose }) {
               conflict: 0,
               keywords: obj && obj.keywords ? obj.keywords : []
             }
+            card.img = getImagePath(name)
             talentos.push(card)
-            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
           }
         }
 
@@ -205,24 +179,12 @@ export default function GameWindow({ onClose }) {
               conflict: 0,
               keywords: obj && obj.keywords ? obj.keywords : []
             }
+            card.img = getImagePath(name)
             iniciativas.push(card)
-            imgPromises.push((async () => ({ id: card.id, found: await findExistingImage(name) }))())
           }
         }
 
-        const imgsResolved = await Promise.all(imgPromises)
-        for (const r of imgsResolved) {
-          if (!r || !r.id) continue
-          const allLists = [personajes, eventos, talentos, iniciativas]
-          for (const list of allLists) {
-            const c = list.find(x => x.id === r.id)
-            if (c) {
-              if (r.found) c.img = r.found
-              else c.img = `/${normalizeFileName(c.name)}.bmp`
-              break
-            }
-          }
-        }
+        // image paths assigned deterministically earlier; no probing here.
 
         // Build deck: only personajes and eventos, then shuffle
         let newDeck = [...personajes, ...eventos]

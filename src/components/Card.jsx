@@ -61,7 +61,7 @@ export default function Card({ type = 'personaje', risk = 0, conflict = 0, allie
         <div className="card-face card-front">
           {/* full-bleed artwork behind overlays */}
           {img && !imgError ? (
-            <img src={img} alt={name || ''} className="card-art-img" onError={(e) => { try { setImgError(true) } catch (er) {} }} />
+            <img src={img} alt={name || ''} className="card-art-img" loading="lazy" onError={(e) => { try { setImgError(true) } catch (er) {} }} />
           ) : (
             <div className="card-art" aria-hidden="true">{name ? name : '🂠'}</div>
           )}
