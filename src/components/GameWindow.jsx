@@ -115,8 +115,8 @@ export default function GameWindow({ onClose }) {
             baseNoDiacritics,
             encodeURIComponent(baseNoDiacritics)
           ]
-          const exts = ['bmp', 'png', 'jpg', 'jpeg']
-          const prefixes = ['', '/images']
+          const exts = ['bmp']
+          const prefixes = ['/images']
           for (const p of prefixes) {
             for (const v of variants) {
               for (const e of exts) {
