@@ -1,13 +1,16 @@
 {
   "Iniciativa": {
     "Lider Cautelosa": {
-      "keywords": ["RISK_MOD(-2)", "ELIM_MOD(-5)"]
+      "keywords": ["RISK_MOD(-2)", "ELIM_MOD(-5)"],
+      "oracle": "Los resultados de riesgo obtienen -2. Tus resultados de eliminación obtienen -5."
     },
     "Lider Despiadado": {
-      "keywords": ["DISCARD_CHARACTER", "ELIM_BY_CONFLICT_VALUE", "TIRED_MOD(X)"]
+      "keywords": ["DISCARD_CHARACTER", "ELIM_BY_CONFLICT_VALUE", "TIRED_MOD(X)"],
+      "oracle": "En cualquier paso de eliminación puedes descartar uno de tus personajes aliados para eliminar X zombies, donde X son los puntos de conflicto de ese personaje; luego obtienes X contadores de cansancio."
     },
     "Lider Entusiasta": {
-      "keywords": ["ELIM_MOD(2)", "DOUBLE_TIRED_GAIN"]
+      "keywords": ["ELIM_MOD(2)", "DOUBLE_TIRED_GAIN"],
+      "oracle": "Tus resultados de eliminación obtienen +2. Si fueras a obtener contadores de cansancio, en vez de eso obtienes el doble de esos contadores."
     }
   }
 }

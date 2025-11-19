@@ -1,37 +1,52 @@
 {
   "Eventos": {
     "Amanecer de los muertos": {
-      "keywords": ["NO_ABILITY", "RISK_MOD(1)"]
+      "keywords": ["NO_ABILITY", "RISK_MOD(1)"],
+      "oracle": "Los personajes, los talentos y los otros eventos no tienen habilidad. Los resultados de riesgo obtienen +1."
     },
     "Caminata nocturna": {
-      "keywords": ["CANNOT_IGNORE_TIRED"]
+      "keywords": ["CANNOT_IGNORE_TIRED"],
+      "oracle": "Los jugadores no pueden ignorar sus contadores de cansancio."
     },
     "Camino equivocado": {
-      "keywords": ["IF_INITIATIVE", "TIRED_MOD(1)"]
+      "keywords": ["IF_INITIATIVE", "TIRED_MOD(1)"],
+      "oracle": "En el paso de riesgo, el jugador con la iniciativa obtiene 1 contador de cansancio."
     },
     "Comunidad virtuosa": {
-      "keywords": ["ELIM_MOD(1)", "IF_CONFLICT_X_OR_MORE(3)", "BECOME_ERRANT"]
+      "keywords": ["ELIM_MOD(1)", "IF_CONFLICT_X_OR_MORE(3)", "BECOME_ERRANT"],
+      "oracle": "Los resultados de eliminación obtienen +1. En el paso de viaje, los personajes aliados con puntos de conflicto 3 o más se vuelven errantes."
     },
     "Grupo improvisado": {
-      "keywords": ["RISK_MOD(3)", "ELIM_MOD(3)"]
+      "keywords": ["RISK_MOD(3)", "ELIM_MOD(3)"],
+      "oracle": "Los resultados de riesgo obtienen +3. Los resultados de eliminación obtienen +3."
     },
     "Manipulacion social": {
-      "keywords": ["DISCARD_TO_EFFECT(CHANGE_RESULT(decision))"]
+      "keywords": ["DISCARD_TO_EFFECT(CHANGE_RESULT(decision))"],
+      "oracle": "Puedes descartar este evento para cambiar cualquier resultado de decisión hasta el final del día; puedes elegir el número del resultado sin rodar el dado."
     },
     "Marcha frenetica": {
-      "keywords": ["DISCARD_TO_EFFECT(ELIM_MOD(999))", "TIRED_MOD(2)"]
+      "keywords": ["DISCARD_TO_EFFECT(ELIM_MOD(999))", "TIRED_MOD(2)"],
+      "oracle": "Puedes descartar este evento para que tu siguiente resultado de eliminación se duplique; si lo haces, obtienes 2 contadores de cansancio."
     },
     "Pandilla infame": {
-      "keywords": ["RISK_MOD(1)", "TIRED_DOES_NOT_RECOVER"]
+      "keywords": ["RISK_MOD(1)", "TIRED_DOES_NOT_RECOVER"],
+      "oracle": "Los resultados de riesgo obtienen +1. Los personajes cansados no se recuperan en el paso de preparación."
     },
     "Pausa necesaria": {
-      "keywords": ["DISCARD_TO_EFFECT(DISCARD_CHARACTER)", "NO_TRAVEL_TIRED"]
+      "keywords": ["DISCARD_TO_EFFECT(DISCARD_CHARACTER)", "NO_TRAVEL_TIRED"],
+      "oracle": "Puedes descartar este evento para descartar un personaje o evento; si lo haces, los jugadores no obtienen contadores de viaje al final del día."
     },
     "Perder la fe": {
-      "keywords": ["CANNOT_CHANGE_RESULTS(all)"]
+      "keywords": ["CANNOT_CHANGE_RESULTS(all)"],
+      "oracle": "Los resultados de decisión, de riesgo y eliminación no pueden ser cambiados."
     },
     "Sabotaje": {
-      "keywords": ["RANDOM_FOCUS", "RISK_MOD(1)", "CANNOT_CHANGE_RESULTS(decision)", "CANNOT_DEFEND"]
+      "keywords": ["RANDOM_FOCUS", "RISK_MOD(1)", "CANNOT_CHANGE_RESULTS(decision)", "CANNOT_DEFEND"],
+      "oracle": "En el paso de preparación elige un enfoque de forma aleatoria. (1) Los resultados de riesgo obtienen +1. (2) Los resultados de decisión no pueden ser cambiados. (3) Los personajes aliados no pueden defender."
+    },
+    "Amanecer de los muertos (nota duplicada)": {
+      "keywords": ["NO_ABILITY", "RISK_MOD(1)"],
+      "oracle": "Los personajes, los talentos y los otros eventos no tienen habilidad. Los resultados de riesgo obtienen +1."
     }
   }
 }

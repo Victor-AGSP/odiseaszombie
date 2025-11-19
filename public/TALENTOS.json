@@ -1,39 +1,24 @@
 {
   "Talentos": {
     "Deportivo": {
-      "keywords": [
-        "CHOOSE_OPTION(3)",
-        "IGNORE_FIRST_TIRED",
-        "ELIM_MOD(1)",
-        "CONFLICT_MOD(2)"
-      ]
+      "keywords": ["CHOOSE_OPTION(3)", "IGNORE_FIRST_TIRED", "ELIM_MOD(1)", "CONFLICT_MOD(2)"],
+      "oracle": "El usuario elige 1: (1) Puedes ignorar el primer contador de cansancio que obtengas cada día. (2) Puedes hacer que tus resultados de eliminación obtengan +1. (3) Puedes hacer que tus resultados de conflicto obtengan +2."
     },
     "Espiritual": {
-      "keywords": [
-        "CHOOSE_OPTION(3)",
-        "CHANGE_RESULT(decision)",
-        "CONFLICT_MOD(-2)",
-        "RISK_MOD(-1)"
-      ]
+      "keywords": ["CHOOSE_OPTION(3)", "CHANGE_RESULT(decision)", "CONFLICT_MOD(-2)", "RISK_MOD(-1)"],
+      "oracle": "El usuario elige 1: (1) Puedes cambiar un resultado de decisión. (2) Puedes hacer que los resultados de conflicto de un personaje obtengan -2. (3) Puedes hacer que los resultados de riesgo de otro jugador obtengan -1."
     },
     "Exploracion": {
-      "keywords": [
-        "CHOOSE_OPTION(3)",
-        "DEFENSE_STEP(1,1)",
-        "DEFENSE_STEP(3,2)",
-        "DEFENSE_STEP(5,3)"
-      ]
+      "keywords": ["CHOOSE_OPTION(3)", "DEFENSE_STEP(1,1)", "DEFENSE_STEP(3,2)", "DEFENSE_STEP(5,3)"],
+      "oracle": "El usuario elige 1: (1) En el primer paso de defensa elimina 1 zombie. (2) En el tercer paso de defensa elimina 2 zombies. (3) En el quinto paso de defensa elimina 3 zombies."
     },
     "Medicinal": {
-      "keywords": [
-        "CHOOSE_OPTION(3)",
-        "RECOVER_EXTRA_ALLY",
-        "REMOVE_TIRED(1)",
-        "REMOVE_TIRED(2)"
-      ]
+      "keywords": ["CHOOSE_OPTION(3)", "RECOVER_EXTRA_ALLY", "REMOVE_TIRED(1)", "REMOVE_TIRED(2)"],
+      "oracle": "El usuario elige 1: (1) Puedes recuperar a un personaje aliado adicional. (2) Puedes reducir 1 contador de cansancio de hasta otros 2 jugadores. (3) Puedes reducir 2 contadores de cansancio de otro jugador."
     },
-    "Sabotaje": {
-      "keywords": ["RANDOM_FOCUS"]
+    "Sabotaje (talento)": {
+      "keywords": ["RANDOM_FOCUS"],
+      "oracle": "Efecto de sabotaje (ver la lógica de enfoque aleatorio)."
     }
   }
 }

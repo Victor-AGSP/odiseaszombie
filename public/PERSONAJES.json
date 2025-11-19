@@ -4,127 +4,148 @@
       "id": 1,
       "Amenaza": 0,
       "Conflicto": 5,
-      "keywords": ["CANNOT_BE_AFFECTED_BY_EVENTS", "CANNOT_RECOVER", "ELIM_MOD(1)"]
+      "keywords": {"Errante":["CANNOT_BE_AFFECTED_BY_EVENTS"], "Aliado":["CANNOT_RECOVER", "ELIM_MOD(1)"]},
+      "oracle": {"Errante":"Este personaje no puede ser afectado por eventos.", "Aliado": "Este personaje no se recupera en el paso de preparación. Tus resultados de eliminación obtienen +1."}
     },
     "Aurora": {
       "id": 2,
       "Amenaza": -3,
       "Conflicto": 4,
-      "keywords": ["DICE(1,2):TIRED_MOD(1)", "IF_INITIATIVE: BECOME_ERRANT"]
+      "keywords": {"Errante":["DICE(1,2):TIRED_MOD(1)"], "Aliado":["IF_INITIATIVE: BECOME_ERRANT"]},
+      "oracle": {"Errante":"Resultado 1 o 2 en el dado: obtienes un contador de cansancio.", "Aliado":"Cada vez que el jugador con la iniciativa entre en conflicto, este personaje se vuelve errante."}
     },
     "Blanca Romero": {
       "id": 3,
       "Amenaza": 0,
       "Conflicto": 2,
-      "keywords": ["SEND_TO_ENCOUNTER_DECK", "DISCARD_EVENT"]
+      "keywords": {"Errante":["SEND_TO_ENCOUNTER_DECK"], "Aliado":["DISCARD_EVENT"]},
+      "oracle": {"Errante":"Si este personaje fuera a ser descartado, en vez de eso, envíalo a la baraja de encuentros.", "Aliado":"Si este personaje fuera a ser descartado, en vez de eso, envíalo a la baraja de encuentros; luego puedes descartar un evento."}
     },
     "Bruce Vergara": {
       "id": 4,
       "Amenaza": 1,
       "Conflicto": 3,
-      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "ELIM_EQUALS_TIRED"]
+      "keywords": {"Errante":["ADD_ENCOUNTER_ACTION(1)"], "Aliado":["ELIM_EQUALS_TIRED"]},
+      "oracle": {"Errante":"Los jugadores obtienen una acción de encuentro adicional.", "Aliado":"Al comienzo del primer paso de eliminación, puedes eliminar X zombies, donde X es igual a tus contadores de cansancio."}
     },
     "Coronel Navarro": {
       "id": 5,
       "Amenaza": -2,
       "Conflicto": 5,
-      "keywords": ["ALLY_STEAL", "OTHER_RISK_MOD(1)"]
+      "keywords": {"Aliado":["ALLY_STEAL", "OTHER_RISK_MOD(1)"]},
+      "oracle": {"Aliado":"Cada vez que un personaje se vuelva aliado de otro jugador, en vez de eso, se vuelve tu aliado. Los puntos de riesgo de los personajes aliados de los otros jugadores obtienen +1."}
     },
     "Cynthia": {
       "id": 6,
       "Amenaza": 1,
       "Conflicto": 1,
-      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "DISCARD_TO_EFFECT(DISCARD_EVENT)"]
+      "keywords": {"Errante":["ADD_ENCOUNTER_ACTION(1)"], "Aliado":["DISCARD_TO_EFFECT(DISCARD_EVENT)"]},
+      "oracle": {"Errante":"Los jugadores obtienen una acción de encuentro adicional.", "Aliado":"Puedes descartar este personaje y obtener un contador de cansancio para descartar un evento."}
     },
     "Daging": {
       "id": 7,
       "Amenaza": 5,
       "Conflicto": 5,
-      "keywords": ["DICE(1,2):DISCARD_LOW_CONFLICT", "PROTECT_DISCARD"]
+      "keywords": {"Errante":["DICE(1,2):DISCARD_LOW_CONFLICT", "PROTECT_DISCARD"]},
+      "oracle": {"Errante":"Resultado 1 o 2 en el dado: Descarta todos tus personajes aliados con puntos de conflicto 3 o menos. Si este personaje fuera a ser descartado, en vez de eso, descarta otro personaje con menos puntos de conflicto."}
     },
     "Daniel": {
       "id": 8,
       "Amenaza": 6,
       "Conflicto": 1,
-      "keywords": ["DICE(3,5,6):SELF_DISCARD", "ADD_ENCOUNTER_ACTION(2)", "CANNOT_DEFEND"]
+      "keywords": {"Errante":["DICE(3,5,6):SELF_DISCARD"], "Aliado":["ADD_ENCOUNTER_ACTION(2)", "CANNOT_DEFEND"]},
+      "oracle": {"Errante":"Resultado 3, 5 o 6 en el dado: Descarta este personaje.", "Aliado":"Los jugadores obtienen dos acciones de encuentro adicionales. No puede defender."}
     },
     "Eva": {
       "id": 9,
       "Amenaza": 3,
       "Conflicto": 4,
-      "keywords": ["DICE(3):TIRED_MOD(1)", "IF_UNIQUE_ALLY:IGNORE_FIRST_TIRED"]
+      "keywords": {"Errante":["DICE(3):TIRED_MOD(1)"], "Aliado":["IF_UNIQUE_ALLY:IGNORE_FIRST_TIRED"]},
+      "oracle": {"Errante":"Resultado 3 en el dado: Los jugadores obtienen 1 contador de cansancio.", "Aliado":"Si este personaje es tu único aliado, ignora el primer contador de cansancio que obtengas cada día."}
     },
     "Fahri": {
       "id": 10,
       "Amenaza": 2,
       "Conflicto": 1,
-      "keywords": ["DICE(3):RISK_MOD(3)", "ERRANT_CONFLICT_MOD(-1)"]
+      "keywords": {"Errante":["DICE(3):RISK_MOD(3)"], "Aliado":["ERRANT_CONFLICT_MOD(-1)"]},
+      "oracle": {"Errante":"Resultado 3 en el dado: Los resultados de riesgo obtienen +3.", "Aliado":"Los puntos de conflicto de los personajes errantes obtienen -1."}
     },
     "Frieda": {
       "id": 11,
       "Amenaza": -1,
       "Conflicto": 4,
-      "keywords": ["DICE(6):CONFLICT_MOD(-1)", "DISCARD_TO_EFFECT(ELIM_6_ZOMBIES)", "BECOME_ERRANT_OTHERS"]
+      "keywords": {"Errante":["DICE(6):CONFLICT_MOD(-1)"], "Aliado":["DISCARD_TO_EFFECT(ELIM_6_ZOMBIES)", "BECOME_ERRANT_OTHERS"]},
+      "oracle": {"Errante":"Resultado 6 en el dado: Tus resultados de conflicto obtienen -1.", "Aliado":"Puedes descartar otro personaje aliado para eliminar hasta 6 zombies; si lo haces, los otros personajes aliados se vuelven errantes."}
     },
     "Gertrudis": {
       "id": 12,
       "Amenaza": 5,
       "Conflicto": 4,
-      "keywords": ["DICE(3,4):RISK_MOD(2)", "IF_ALLIES_2_PLUS:BECOME_ERRANT"]
+      "keywords": {"Errante":["DICE(3,4):RISK_MOD(2)"], "Aliado":["IF_ALLIES_2_PLUS:BECOME_ERRANT"]},
+      "oracle": {"Errante":"Resultado 3 o 4 en el dado: Los resultados de riesgo obtienen +2.", "Aliado":"Si tienes otros 2 o más personajes aliados, este personaje se vuelve errante."}
     },
     "Hilibka": {
       "id": 13,
       "Amenaza": 6,
       "Conflicto": 4,
-      "keywords": ["PROTECT_DISCARD", "RISK_MOD(2)"]
+      "keywords": {"Errante":["PROTECT_DISCARD"], "Aliado":["RISK_MOD(2)"]},
+      "oracle": {"Errante":"Si este personaje fuera a ser descartado, en vez de eso, descarta otro personaje con menos puntos de conflicto.", "Aliado":"Los resultados de riesgo obtienen +2."}
     },
-    "Inyama el sacerdote": {
+    "Inyama, el sacerdote": {
       "id": 14,
       "Amenaza": 7,
       "Conflicto": 6,
-      "keywords": ["DICE(5,6):CONFLICT_MOD(1)", "PROTECT_DISCARD"]
+      "keywords": {"Errante":["DICE(5,6):CONFLICT_MOD(1)"], "Aliado":["PROTECT_DISCARD"]},
+      "oracle": {"Errante":"Resultado 5 o 6 en el dado: Tus resultados de conflicto obtienen +1.", "Aliado":"Si este personaje fuera a ser descartado, en vez de eso, descarta otro personaje con menos puntos de conflicto."}
     },
     "Jaime": {
       "id": 15,
       "Amenaza": 5,
       "Conflicto": 3,
-      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "IF_THREAT_X_OR_MORE(10):SEND_TO_ENCOUNTER_DECK"]
+      "keywords": {"Errante":["ADD_ENCOUNTER_ACTION(1)"], "Aliado":["IF_THREAT_X_OR_MORE(10):SEND_TO_ENCOUNTER_DECK"]},
+      "oracle": {"Errante":"Los jugadores obtienen una acción de encuentro adicional.", "Aliado":"Si el total de amenaza es igual o mayor a 10, envía a este personaje a la baraja de encuentros."}
     },
     "Juana del Carmen": {
       "id": 16,
       "Amenaza": 4,
       "Conflicto": 1,
-      "keywords": ["IF_DISCARD:ALLY_ERRANT", "CANNOT_DEFEND"]
+      "keywords": {"Errante":["IF_DISCARD:ALLY_ERRANT"], "Aliado":["IF_DISCARD:ALLY_ERRANT","CANNOT_DEFEND"]},
+      "oracle": {"Errante":"Si este personaje es descartado, los otros personajes aliados se vuelven errantes.", "Aliado":"No puede defender."}
     },
     "Kevin Brayatan": {
       "id": 17,
       "Amenaza": 1,
       "Conflicto": 3,
-      "keywords": ["OTHER_RISK_MOD(1)", "CANNOT_IGNORE_TIRED"]
+      "keywords": {"Errante":["OTHER_RISK_MOD(1)"], "Aliado":["CANNOT_IGNORE_TIRED"]},
+      "oracle": {"Errante":"Los puntos de riesgo de los otros personajes aliados obtienen +1.", "Aliado":"Los jugadores no pueden ignorar los contadores de cansancio que obtengan."}
     },
     "Leonor": {
       "id": 18,
       "Amenaza": -3,
       "Conflicto": 5,
-      "keywords": ["DEFENSE_STEP(1,2)", "IF_TIRED_AND_TIRED_3:BECOME_ERRANT"]
+      "keywords": {"Errante":["DEFENSE_STEP(1,2)"], "Aliado":["IF_TIRED_AND_TIRED_3:BECOME_ERRANT"]},
+      "oracle": {"Errante":"Al comienzo del primer paso de defensa elimina 2 zombies.", "Aliado":"Si este personaje está cansado y tienes 3 o más contadores de cansancio, este personaje se vuelve errante."}
     },
     "Lorenzo": {
       "id": 19,
       "Amenaza": 1,
       "Conflicto": 2,
-      "keywords": ["ADD_ENCOUNTER_ACTION(1)", "CHANGE_RESULT(decision)"]
+      "keywords": {"Errante":["ADD_ENCOUNTER_ACTION(1)"], "Aliado":["CHANGE_RESULT(decision)"]},
+      "oracle": {"Errante":"Los jugadores obtienen una acción de encuentro adicional.", "Aliado":"Puedes cansar a este personaje para cambiar un resultado de decisión."}
     },
     "Luisa Zambrano": {
       "id": 20,
       "Amenaza": 2,
       "Conflicto": 4,
-      "keywords": ["IF_RAFA_ALLY:ALLY_SELF", "DISCARD_TO_EFFECT(DISCARD_EVENT)"]
+      "keywords": {"Errante":["IF_RAFA_ALLY:ALLY_SELF"], "Aliado":["DISCARD_TO_EFFECT(DISCARD_EVENT)"]},
+      "oracle": {"Errante":"Si el personaje Rafa Zambrano es aliado de un jugador, este personaje se vuelve aliado de ese jugador.", "Aliado":"Si Rafa Zambrano es aliado de un jugador, puedes descartar este personaje para descartar un evento."}
     },
     "Magdalena": {
       "id": 21,
       "Amenaza": 1,
       "Conflicto": 3,
-      "keywords": ["ON_INITIATIVE_CHANGE:ALLY_SELF", "SELF_RISK_MOD_PER_ALLY"]
+      "keywords": {"Errante":["ON_INITIATIVE_CHANGE:ALLY_SELF"], "Aliado":["SELF_RISK_MOD_PER_ALLY"]},
+      "oracle": {"Errante":"Cada vez que un jugador obtenga la iniciativa, este personaje se vuelve aliado de ese jugador.", "Aliado":"Los puntos de riesgo de este personaje obtienen +1 por cada otro de tus personajes aliados."}
     }
   }
 }
