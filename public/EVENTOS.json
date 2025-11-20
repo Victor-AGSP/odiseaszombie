@@ -39,14 +39,6 @@
     "Perder la fe": {
       "keywords": ["CANNOT_CHANGE_RESULTS(all)"],
       "oracle": "Los resultados de decisión, de riesgo y eliminación no pueden ser cambiados."
-    },
-    "Sabotaje": {
-      "keywords": ["RANDOM_FOCUS", "RISK_MOD(1)", "CANNOT_CHANGE_RESULTS(decision)", "CANNOT_DEFEND"],
-      "oracle": "En el paso de preparación elige un enfoque de forma aleatoria. (1) Los resultados de riesgo obtienen +1. (2) Los resultados de decisión no pueden ser cambiados. (3) Los personajes aliados no pueden defender."
-    },
-    "Amanecer de los muertos (nota duplicada)": {
-      "keywords": ["NO_ABILITY", "RISK_MOD(1)"],
-      "oracle": "Los personajes, los talentos y los otros eventos no tienen habilidad. Los resultados de riesgo obtienen +1."
     }
   }
 }

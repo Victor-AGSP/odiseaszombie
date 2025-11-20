@@ -22,12 +22,14 @@ export default function Card({ type = 'personaje', risk = 0, conflict = 0, allie
     if (node && node.animate) {
       animatingRef.current = true
       // keyframes: normal -> backward+fade -> normal
+      const from = getComputedStyle(node).transform || 'none'
       const kf = [
-        { transform: getComputedStyle(node).transform || 'none', opacity: 1 },
-        { transform: 'translateZ(-48px) scale(0.86) rotateX(12deg)', opacity: 0 },
-        { transform: 'rotateX(22deg) translateZ(-2px)', opacity: 1 }
+        { transform: from, opacity: 1 },
+        { transform: 'translateZ(-36px) scale(0.92) rotateX(8deg)', opacity: 0.12, offset: 0.45 },
+        { transform: 'translateZ(-8px) scale(1.02) rotateX(2deg)', opacity: 1, offset: 0.82 },
+        { transform: 'none', opacity: 1 }
       ]
-      const anim = node.animate(kf, { duration: 620, easing: 'cubic-bezier(.22,.9,.3,1)' })
+      const anim = node.animate(kf, { duration: 420, easing: 'cubic-bezier(.2,.9,.28,1)' })
       // disable pointer events on node during animation to avoid re-clicks
       try { node.style.pointerEvents = 'none' } catch (er) {}
       // Call the provided onClick callback immediately so UI responds without waiting

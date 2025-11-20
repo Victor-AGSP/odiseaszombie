@@ -40,6 +40,10 @@ export default function GameWindow({ onClose }) {
   const [days, setDays] = useState(0)
   const [zombies, setZombies] = useState(0)
   const [log, setLog] = useState([])
+  const latestZombiesRef = useRef(zombies)
+  useEffect(() => { latestZombiesRef.current = zombies }, [zombies])
+  // basic players model (single-player default). Structure: { id, name, hasInitiative, defenders: [cardId], actionsNextDay }
+  const [players, setPlayers] = useState(() => [{ id: 'p0', name: 'Jugador', hasInitiative: true, defenders: [], actionsNextDay: 0 }])
   const [hoveredIndex, setHoveredIndex] = useState(null)
   // Game step system (single-player focused)
   const [currentStep, setCurrentStep] = useState('') // '', 'preparacion','encuentro','decision','riesgo','defensa','viaje'
@@ -52,12 +56,19 @@ export default function GameWindow({ onClose }) {
   // Algunos personajes/efectos pueden incrementar este valor en el futuro.
   const [encountersPerTurn, setEncountersPerTurn] = useState(1)
 
+  // Keyword engine state: track active modifiers applied by personajes
+  // Structure: { [cardId]: { encounters: number, otherRiskMod: number, selfRiskMod: number, protectDiscard: bool, elimMod: number, elimEqualsTired: bool, diceTriggers: [{nums:Set, effect:{type, val}}], errantConflictMod: number } }
+  const [keywordModifiers, setKeywordModifiers] = useState({})
+
   // mini-menu state for hand cards
   const [menuCard, setMenuCard] = useState(null)
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
   const [previewCard, setPreviewCard] = useState(null)
   const [showInitiativeOptions, setShowInitiativeOptions] = useState(false)
   const [hoveredInitiativeIndex, setHoveredInitiativeIndex] = useState(null)
+  // Talent choice modal state: when entering Preparación player must pick one of the talento's abilities
+  const [talentChoiceCard, setTalentChoiceCard] = useState(null)
+  const [talentChoicesToday, setTalentChoicesToday] = useState({})
   // Side-slot carousel state (mobile swipe between Evento / Talento / Iniciativa)
   const [sideIndex, setSideIndex] = useState(0) // 0:evento,1:talento,2:iniciativa
   const sideTouchStartRef = useRef(null)
@@ -110,8 +121,15 @@ export default function GameWindow({ onClose }) {
         // image path in the JSON data.
         function getImagePath(baseName) {
           if (!baseName) return null
-          const baseNoDiacritics = baseName && baseName.normalize ? baseName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : String(baseName || '').toLowerCase()
-          return `/images/${encodeURIComponent(baseNoDiacritics)}.bmp`
+          // Remove diacritics, lowercase and strip punctuation but keep spaces
+          // so filenames like "comunidad virtuosa.bmp" are matched.
+          let s = baseName && baseName.normalize ? baseName.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : String(baseName || '')
+          s = s.toLowerCase()
+          // remove punctuation (commas, dots, etc.) but preserve letters, numbers, spaces and dashes
+          s = s.replace(/[^a-z0-9\s\-]/g, '')
+          // collapse multiple spaces into one and trim
+          s = s.replace(/\s+/g, ' ').trim()
+          return `/images/${encodeURIComponent(s)}.bmp`
         }
 
         // Map personajes from PERSONAJES.json
@@ -255,6 +273,31 @@ export default function GameWindow({ onClose }) {
     if (!card) return
     // prevent duplicates in discard by id (or name fallback)
     const key = card.id || card.name || JSON.stringify(card)
+    // PROTECT_DISCARD: if the card being discarded has a protect flag, try to discard another suitable card instead
+    const mods = (card && card.id && keywordModifiers[card.id]) || null
+    if (mods && mods.protectDiscard) {
+      // find a candidate on table with lower conflict
+      const tbl = latestTableRef.current || []
+      let candidate = null
+      try {
+        candidate = tbl.slice().sort((a,b) => (a.conflict||0)-(b.conflict||0)).find(x => x && x.conflict < (card.conflict||0) && x.id !== card.id)
+      } catch (e) { candidate = null }
+      if (candidate) {
+        const candKey = candidate.id || candidate.name || JSON.stringify(candidate)
+        setDiscardPile(d => {
+          try {
+            if (d && d.some(x => (x && (x.id || x.name)) && (x.id === candidate.id || x.name === candidate.name))) return d
+          } catch (e) {}
+          return [candidate, ...d]
+        })
+        // remove candidate from table
+        setTable(t => (t || []).filter(x => !(x && (x.id === candidate.id))))
+        pushLog(`Protección activada: se descartó ${candidate.name || 'otro personaje'} en lugar de ${card.name || 'este personaje'}`)
+        return
+      }
+      // otherwise fallthrough and discard the original
+    }
+
     setDiscardPile(d => {
       try {
         if (d && d.some(x => (x && (x.id || x.name)) && (x.id === card.id || x.name === card.name))) return d
@@ -264,6 +307,271 @@ export default function GameWindow({ onClose }) {
       return [card, ...d]
     })
   }
+
+  // Parse a single keyword string into an object representation
+  function parseKeywordString(str) {
+    if (!str || typeof str !== 'string') return null
+    const s = str.trim()
+    // handle patterns like "DICE(1,2):TIRED_MOD(1)" or "IF_INITIATIVE: BECOME_ERRANT"
+    const parts = s.split(':').map(x => x.trim())
+    if (parts.length === 1) {
+      // single action
+      const m = parts[0].match(/(\w+)(?:\(([^)]*)\))?/) || []
+      const name = m[1] || parts[0]
+      const arg = m[2] || null
+      return { name, arg }
+    }
+    // two parts: condition:action or trigger:effect
+    return { trigger: parts[0], effect: parts.slice(1).join(':') }
+  }
+
+  // Format a raw keyword/token into a human-friendly label for UI.
+  function formatKeywordLabel(s) {
+    if (!s || typeof s !== 'string') return s
+    // If it already looks like a natural sentence (contains lowercase letters), return as-is
+    if (/[a-záéíóúñü\s]/.test(s)) return s
+    const token = s.trim()
+    // match NAME(args)
+    const m = token.match(/^([A-Z_]+)(?:\(([^)]*)\))?$/)
+    if (!m) {
+      // fallback: replace underscores and capitalize
+      const pretty = token.replace(/_/g, ' ').toLowerCase()
+      return pretty.charAt(0).toUpperCase() + pretty.slice(1)
+    }
+    const name = m[1]
+    const arg = m[2]
+    switch (name) {
+      case 'ADD_ENCOUNTER_ACTION': {
+        const n = Number(arg || 1) || 1
+        return `Añade ${n} acción${n === 1 ? '' : 'es'} de encuentro`
+      }
+      case 'ELIM_MOD': {
+        const n = Number(arg || 0) || 0
+        return `Resultados de eliminación ${n >= 0 ? '+' + n : n}`
+      }
+      case 'CONFLICT_MOD': {
+        const n = Number(arg || 0) || 0
+        return `Resultados de conflicto ${n >= 0 ? '+' + n : n}`
+      }
+      case 'RISK_MOD': {
+        const n = Number(arg || 0) || 0
+        return `Resultados de riesgo ${n >= 0 ? '+' + n : n}`
+      }
+      case 'IGNORE_FIRST_TIRED': return 'Ignorar primer contador de cansancio del día'
+      case 'REMOVE_TIRED': {
+        const n = Number(arg || 1) || 1
+        return `Quitar ${n} contador${n === 1 ? '' : 'es'} de cansancio`
+      }
+      case 'RECOVER_EXTRA_ALLY': return 'Recuperar un aliado adicional'
+      case 'DEFENSE_STEP': {
+        // args like '1,1' => step, amount
+        const parts = (arg || '').split(',').map(x => Number(x || 0))
+        return `En el paso de defensa ${parts[0] || '?'} elimina ${parts[1] || '?'} zombies`
+      }
+      case 'CHANGE_RESULT': return 'Cambiar un resultado de decisión'
+      case 'ELIM_EQUALS_TIRED': return 'Eliminaciones igualan contadores de cansancio'
+      case 'RECOVER_EXTRA_ALLY': return 'Recuperar un aliado adicional'
+      default: {
+        const pretty = name.replace(/_/g, ' ').toLowerCase()
+        return pretty.charAt(0).toUpperCase() + pretty.slice(1) + (arg ? ` (${arg})` : '')
+      }
+    }
+  }
+
+  // Apply persistent keywords for a card when it becomes errant or allied
+  function applyKeywordsForCard(card, mode) {
+    if (!card || !card.keywords) return
+    const kws = card.keywords || {}
+    const list = kws[mode === 'errant' ? 'Errante' : 'Aliado'] || []
+    if (!list || list.length === 0) return
+    const mods = { encounters: 0, otherRiskMod: 0, selfRiskMod: 0, protectDiscard: false, elimMod: 0, elimEqualsTired: false, diceTriggers: [], errantConflictMod: 0 }
+    for (const raw of list) {
+      if (!raw) continue
+      const token = raw.trim()
+      // handle chained like DICE(1,2):TIRED_MOD(1)
+      if (token.includes(':')) {
+        const [left, right] = token.split(':').map(x => x.trim())
+        if (left.startsWith('DICE')) {
+          const nums = (left.match(/\(([^)]*)\)/) || [null,null])[1]
+          const set = new Set((nums||'').split(',').map(x=>Number(x)).filter(n=>!Number.isNaN(n)))
+          // parse right effect
+          const re = right.match(/(\w+)(?:\(([-\d]+)\))?/) || []
+          const effName = re[1]
+          const effVal = re[2] ? Number(re[2]) : null
+          mods.diceTriggers.push({ nums: set, effect: { type: effName, val: effVal } })
+          continue
+        }
+        // generic IF_* triggers stored as diceTriggers for manual invocation
+        mods.diceTriggers.push({ nums: null, effect: { type: token } })
+        continue
+      }
+      // single tokens
+      if (token.startsWith('ADD_ENCOUNTER_ACTION')) {
+        const n = Number((token.match(/\(([-\d]+)\)/) || [null,1])[1] || 1)
+        mods.encounters += n
+        continue
+      }
+      if (token.startsWith('OTHER_RISK_MOD')) {
+        const n = Number((token.match(/\(([-\d]+)\)/) || [null,0])[1] || 0)
+        mods.otherRiskMod += n
+        continue
+      }
+      if (token.startsWith('RISK_MOD')) {
+        const n = Number((token.match(/\(([-\d]+)\)/) || [null,0])[1] || 0)
+        mods.selfRiskMod += n
+        continue
+      }
+      if (token === 'PROTECT_DISCARD') { mods.protectDiscard = true; continue }
+      if (token.startsWith('ELIM_MOD')) { mods.elimMod += Number((token.match(/\(([-\d]+)\)/) || [null,0])[1] || 0); continue }
+      if (token === 'ELIM_EQUALS_TIRED') { mods.elimEqualsTired = true; continue }
+      if (token.startsWith('ERRANT_CONFLICT_MOD')) { mods.errantConflictMod += Number((token.match(/\(([-\d]+)\)/) || [null,0])[1] || 0); continue }
+      // catch some IF_ triggers as flags (we'll handle their invocation elsewhere)
+      if (token.startsWith('IF_')) { mods[token] = true; continue }
+      // fallback: store as raw effect
+      mods.diceTriggers.push({ nums: null, effect: { type: token } })
+    }
+
+    setKeywordModifiers(prev => ({ ...prev, [card.id]: mods }))
+
+    // apply immediate persistent effects that change global state
+    if (mods.encounters) setEncountersPerTurn(v => Math.max(1, v + mods.encounters))
+  }
+
+  // Sum all ADD_ENCOUNTER_ACTION values provided by cards currently on the table.
+  // Prefer values tracked in `keywordModifiers`; fall back to parsing the raw
+  // keyword strings on the card if modifiers are not present.
+  function sumEncounterAddsFromTable(tbl) {
+    let sum = 0
+    try {
+      const arr = tbl || []
+      for (const c of arr) {
+        if (!c) continue
+        const mods = (c.id && keywordModifiers && keywordModifiers[c.id]) || null
+        if (mods && mods.encounters) {
+          sum += Number(mods.encounters) || 0
+          continue
+        }
+        // fallback: look into both Errante and Aliado keyword lists (some cards
+        // may include ADD_ENCOUNTER_ACTION only in one of them). Do not rely
+        // on the card's current `errant` flag for this lookup.
+        const kws = c.keywords || {}
+        const list = [].concat(kws.Errante || [], kws.Aliado || [])
+        for (const token of list || []) {
+          if (!token || typeof token !== 'string') continue
+          const t = token.trim()
+          if (t.startsWith('ADD_ENCOUNTER_ACTION')) {
+            const m = t.match(/\(([-\d]+)\)/)
+            sum += Number(m ? m[1] : 1) || 0
+          }
+        }
+      }
+    } catch (e) {
+      // ignore parsing issues
+    }
+    return sum
+  }
+
+  function removeKeywordsForCard(card) {
+    if (!card || !card.id) return
+    const mods = keywordModifiers[card.id]
+    if (!mods) return
+    // revert persistent effects
+    if (mods.encounters) setEncountersPerTurn(v => Math.max(1, v - mods.encounters))
+    setKeywordModifiers(prev => {
+      const copy = { ...prev }
+      delete copy[card.id]
+      return copy
+    })
+  }
+
+  // Evaluate dice-triggered keyword effects across active errant cards
+  function evaluateDiceTriggers(result, phase) {
+    try {
+      const tbl = latestTableRef.current || []
+      for (const c of tbl) {
+        if (!c || !c.id) continue
+        const mods = keywordModifiers[c.id]
+        if (!mods || !mods.diceTriggers || mods.diceTriggers.length === 0) continue
+        for (const trig of mods.diceTriggers) {
+          if (trig.nums && trig.nums.size > 0) {
+            if (!trig.nums.has(result)) continue
+          }
+          const eff = trig.effect
+          if (!eff) continue
+          const type = (eff.type || '').toUpperCase()
+          const val = eff.val || 0
+          if (type === 'TIRED_MOD') {
+            setFatigueCount(f => {
+              const next = f + (val || 1)
+              pushLog(`${c.name || 'Personaje'} (ERRANTE): TIRED_MOD activado => +${val || 1} cansancio`)
+              return next
+            })
+          } else if (type === 'RISK_MOD') {
+            // in riesgo phase, increase zombies by val
+            if (phase === 'riesgo') {
+              setZombies(z => z + (val || 0))
+              pushLog(`${c.name || 'Personaje'} (ERRANTE): RISK_MOD activado => +${val || 0} amenaza`)
+            }
+          } else if (type === 'SELF_DISCARD') {
+            // discard this character
+            setTable(t => (t || []).filter(x => !(x && x.id === c.id)))
+            addToDiscard(c)
+            pushLog(`${c.name || 'Personaje'} (ERRANTE): SELF_DISCARD activado — fue descartado`) 
+          } else if (type && type.startsWith('DISCARD')) {
+            // generic discard effect for low-conflict characters
+            if (type.includes('LOW_CONFLICT')) {
+              setTable(t => {
+                const removed = (t || []).filter(x => x && x.type === 'personaje' && (x.conflict||0) <= 3 && x.id !== c.id)
+                for (const r of removed) addToDiscard(r)
+                return (t || []).filter(x => !(removed.some(rr => rr.id === x.id)))
+              })
+              pushLog(`${c.name || 'Personaje'} (ERRANTE): DISCARD_LOW_CONFLICT activado`) 
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error evaluating dice triggers', e)
+    }
+  }
+
+  function getEffectiveRisk(card) {
+    const base = Number(card.risk) || 0
+    let extra = 0
+    try {
+      // sum otherRiskMod from allied characters
+      const tbl = latestTableRef.current || []
+      for (const c of tbl) {
+        if (!c || !c.id) continue
+        // only allies (not errant) provide otherRiskMod
+        const mods = keywordModifiers[c.id]
+        if (!mods) continue
+        if (!c.errant) extra += mods.otherRiskMod || 0
+      }
+      // if this card has a selfRiskMod, add it
+      const mymods = keywordModifiers[card.id]
+      if (mymods) extra += mymods.selfRiskMod || 0
+    } catch (e) {}
+    return base + extra
+  }
+
+  // Cleanup: remove keywordModifiers for cards that are no longer present (hand, table, player talents, events)
+  useEffect(() => {
+    try {
+      const present = new Set()
+      ;(table || []).forEach(c => c && c.id && present.add(c.id))
+      ;(hand || []).forEach(c => c && c.id && present.add(c.id))
+      ;(playerTalents || []).forEach(c => c && c.id && present.add(c.id))
+      ;(playerEvents || []).forEach(c => c && c.id && present.add(c.id))
+      setKeywordModifiers(prev => {
+        const copy = { ...prev }
+        for (const id of Object.keys(prev || {})) {
+          if (!present.has(id)) delete copy[id]
+        }
+        return copy
+      })
+    } catch (e) {}
+  }, [table, hand, playerTalents, playerEvents])
 
   function pushLog(msg) {
     setLog(l => [msg, ...l].slice(0, 8))
@@ -279,6 +587,18 @@ export default function GameWindow({ onClose }) {
     pushLog('Iniciativa aplicada: reducción adicional de cansancio')
     // Allow personajes to be interactable again for decisión (se limpia marca por día)
     setTable(t => (t || []).map(c => ({ ...c, processedDecision: false, awaitingDecision: false })))
+
+    // If player has a talento card, ask them to choose one of its abilities for the day
+    try {
+      const talento = talentoCard
+      if (talento && talento.id) {
+        // If not chosen yet today, open modal to choose
+        if (!talentChoicesToday[talento.id]) {
+          // prepare modal card (derive options later when rendering)
+          setTalentChoiceCard(talento)
+        }
+      }
+    } catch (e) {}
   }
 
   async function pasoEncuentro() {
@@ -288,27 +608,64 @@ export default function GameWindow({ onClose }) {
       pushLog('Ya alcanzaste 3 acciones de encuentro hoy')
       return
     }
-
-    // Repetir la acción de mostrar carta tantas veces como indique `encountersPerTurn`.
-    // Usamos una variable local `actions` para mantener un conteo consistente
-    // al iterar y actualizar el estado `encounterActionsToday`.
-    const count = Math.max(1, Number(encountersPerTurn) || 1)
+    // Repetir la acción de mostrar carta hasta consumir todas las instancias actualmente
+    // asignadas por `encountersPerTurn`. Si durante las revelaciones se generan más
+    // ADD_ENCOUNTER_ACTION, `encountersPerTurn` puede aumentar y seguiremos mostrando
+    // cartas hasta alcanzarlo, o hasta el límite de 3 acciones por día.
     let actions = Number(encounterActionsToday) || 0
-    for (let i = 0; i < count; i++) {
-      if (actions >= 3) {
-        pushLog('Ya alcanzaste 3 acciones de encuentro hoy')
-        break
-      }
+    // Safety cap to avoid infinite loops if something erroneamente aumenta encountersPerTurn
+    const absoluteCap = 12
+    let iterations = 0
+    while (actions < 3) {
+      // current target may change during reveals
+      // compute target dynamically: base encountersPerTurn plus +1 por personaje en mesa
+      const dailyCap = 3
+      const tblNow = latestTableRef.current || []
+      const addedFromTable = sumEncounterAddsFromTable(tblNow)
+      const base = Number(encountersPerTurn) || 1
+      const target = Math.max(1, Math.min(base + addedFromTable, dailyCap))
+      if (actions >= target) break
+      if (iterations++ > absoluteCap) { pushLog('Límite de revelaciones alcanzado (seguridad)'); break }
       actions++
       setEncounterActionsToday(actions)
-      pushLog(`Paso de Encuentro: mostrando carta ${i + 1} de ${count}`)
-      // Reusar comportamiento existente de showCard (es async y puede abrir modales)
-      // Esperamos a que cada revelación termine antes de continuar a la siguiente.
-      // Nota: showCard gestiona su propio bloqueo para evitar revelaciones concurrentes.
-      // re-use existing showCard behaviour (await because showCard is async)
+      pushLog(`Paso de Encuentro: mostrando carta ${actions} de ${target}`)
       // eslint-disable-next-line no-await-in-loop
       await showCard()
+      // loop will re-evaluate `encountersPerTurn` and continue if increased
     }
+  }
+
+  // Perform a single encounter reveal (one 'Encontrar' action). This is used
+  // when the player is already in the Encuentro phase and clicks the
+  // "Encontrar" button. It respects the daily cap and the dynamically
+  // computed remaining encounters.
+  async function findOneEncounter() {
+    // prevent concurrent reveals
+    if (isShowingRef.current || isShowing) {
+      pushLog('Esperando a que termine la revelación actual')
+      return
+    }
+    // respect daily cap
+    if ((Number(encounterActionsToday) || 0) >= 3) {
+      pushLog('Ya alcanzaste 3 acciones de encuentro hoy')
+      return
+    }
+    // recompute remainingEncounters using same logic as render
+    const tblNow = latestTableRef.current || []
+    const addedFromTable = sumEncounterAddsFromTable(tblNow)
+    const base = Number(encountersPerTurn) || 1
+    const effectiveTotal = Math.max(1, Math.min(base + addedFromTable, 3))
+    const remaining = Math.max(0, effectiveTotal - (Number(encounterActionsToday) || 0))
+    if (remaining <= 0) {
+      pushLog('No quedan encuentros por hacer')
+      return
+    }
+
+    // consume one encounter action and show a card
+    const nextActions = (Number(encounterActionsToday) || 0) + 1
+    setEncounterActionsToday(nextActions)
+    pushLog(`Encontrar: mostrando carta ${nextActions} de ${effectiveTotal}`)
+    await showCard()
   }
 
   function pasoDecision() {
@@ -319,34 +676,145 @@ export default function GameWindow({ onClose }) {
       return
     }
 
-    // mark personajes as awaiting decision (visual red border) unless already processed
-    setTable(t => (t || []).map(c => (c.type === 'personaje' && !c.processedDecision) ? { ...c, awaitingDecision: true, interactedThisRound: false, inConflict: false } : c))
-    // initialize round participants with the IDs of personajes that must be processed this round
-    setDecisionRoundParticipants(personajes.filter(p => !p.processedDecision).map(p => p.id))
-    pushLog('Paso de Decisión: los personajes en mesa esperan resolución. Haz click en un personaje y pulsa "Conflicto"')
+    // determine which personajes must be processed this round
+    // Rule: if multiple players, only one errant per player is handled per day (initiative order)
+    const errantChars = (table || []).filter(c => c.type === 'personaje' && c.errant && !c.processedDecision)
+    let participants = []
+    if ((players || []).length > 1 && errantChars.length > 0) {
+      // build initiative order (players with hasInitiative first, then others in array order)
+      const iniIndex = (players || []).findIndex(p => p.hasInitiative)
+      const order = []
+      for (let i = 0; i < (players || []).length; i++) {
+        order.push(players[(iniIndex + i) % players.length].id)
+      }
+      // assign up to one errant per player in that order
+      const assigned = new Set()
+      for (const pid of order) {
+        const pick = errantChars.find(c => !assigned.has(c.id) && (c.owner === pid || !c.owner))
+        if (pick) { assigned.add(pick.id); participants.push(pick.id) }
+      }
+      // If still none assigned (no owner matching), fallback to first N errants
+      if (participants.length === 0 && errantChars.length > 0) participants = errantChars.slice(0, players.length).map(c => c.id)
+    } else {
+      // single-player or no errants: process all personajes needing processing
+      participants = personajes.filter(p => !p.processedDecision).map(p => p.id)
+    }
+
+    // mark selected participants as awaiting decision (visual red border)
+    setTable(t => (t || []).map(c => (c.type === 'personaje' && participants.includes(c.id)) ? { ...c, awaitingDecision: true, interactedThisRound: false, inConflict: false } : c))
+    setDecisionRoundParticipants(participants)
+    pushLog('Paso de Decisión: los personajes seleccionados esperan resolución. Haz click en un personaje y pulsa "Conflicto"')
   }
 
   function pasoRiesgo() {
     setCurrentStep('riesgo')
-    const die = rollDice()
+    const die = rollDice('riesgo')
     // sum allied personajes risk (table items allied = !errant)
-    const alliedRisk = table.filter(c => c.type === 'personaje' && !c.errant).reduce((s, x) => s + (Number(x.risk) || 0), 0)
+    const allied = table.filter(c => c.type === 'personaje' && !c.errant)
+    const alliedRisk = allied.reduce((s, x) => s + getEffectiveRisk(x), 0)
     const delta = die + alliedRisk
     setZombies(z => z + delta)
+    // mark which allied characters contributed this risk step (for rule interactions later)
+    try {
+      const contributedIds = new Set((allied || []).map(a => a.id))
+      setTable(t => (t || []).map(x => ({ ...x, contributedThisRiesgo: (x && x.id) ? contributedIds.has(x.id) : false })))
+    } catch (e) {}
     pushLog(`Paso de Riesgo: dado ${die} + riesgo aliado ${alliedRisk} => +${delta} amenaza`) 
   }
 
-  function pasoDefensa() {
+  async function pasoDefensa() {
     setCurrentStep('defensa')
-    const die = rollDice()
-    // subtract from zombies
-    setZombies(z => {
-      const next = Math.max(0, z - die)
-      return next
-    })
-    // every elimination step adds a fatigue counter
-    setFatigueCount(f => f + 1)
-    pushLog(`Paso de Defensa: lanzaste d6: ${die} (resta ${die} zombies), se añadió 1 cansancio a todos`) 
+    // Multi-player aware multi-step elimination loop.
+    // Players roll in order; defenders provide +1 elimination each; additional rounds reduce rolls by fatigueCount.
+    let round = 0
+    // ensure we capture current players order (initiative first)
+    const iniIndex = (players || []).findIndex(p => p.hasInitiative)
+    const order = []
+    for (let i = 0; i < (players || []).length; i++) order.push(players[(iniIndex + i) % players.length])
+
+    while (true) {
+      round++
+      let allZero = true
+      // each player gets to roll unless zombies already 0
+      for (const player of order) {
+        const currentZ = latestZombiesRef.current || 0
+        if (currentZ <= 0) {
+          // player doesn't roll and gains an extra encounter action next day
+          setPlayers(ps => (ps || []).map(p => p.id === player.id ? { ...p, actionsNextDay: (p.actionsNextDay || 0) + 1 } : p))
+          pushLog(`${player.name || 'Jugador'} no necesitó tirar: recibe 1 acción de encuentro adicional mañana`)
+          continue
+        }
+
+        const roll = rollDice('defensa')
+        const adjusted = round > 1 ? Math.max(0, roll - (fatigueCount || 0)) : roll
+        // defenders count
+        const defendersCount = (player.defenders || []).length || 0
+        // sum ELIM_MOD from this player's allied characters on table
+        let elimModSum = 0
+        try {
+          const tbl = latestTableRef.current || []
+          for (const c of tbl) {
+            if (!c || !c.id) continue
+            if (c.owner !== player.id) continue
+            const mods = keywordModifiers[c.id]
+            if (!mods) continue
+            elimModSum += mods.elimMod || 0
+            if (mods.elimEqualsTired) elimModSum += (fatigueCount || 0)
+          }
+        } catch (e) {}
+
+        const elimination = Math.max(0, adjusted + defendersCount + (elimModSum || 0))
+        if (elimination > 0) allZero = false
+        // apply elimination
+        setZombies(z => {
+          const next = Math.max(0, z - elimination)
+          latestZombiesRef.current = next
+          return next
+        })
+        pushLog(`${player.name || 'Jugador'}: tirada ${roll} => ${adjusted} + defensores ${defendersCount} + mods ${elimModSum} => -${elimination} zombies`)
+
+        // small pause to allow UI to update between rolls
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise(r => setTimeout(r, 60))
+      }
+
+      // after each full round, increase fatigue for all players
+      setFatigueCount(f => {
+        const next = f + 1
+        pushLog(`Fin de paso de eliminación: +1 cansancio (total ${next})`)
+        if (next >= 6) {
+          pushLog('Has alcanzado 6 de cansancio: has perdido.')
+          setGameOver(true)
+        }
+        return next
+      })
+
+      // check lose condition: all players rolled 0 (after modifiers) in this round
+      if (allZero) {
+        pushLog('Todos los resultados fueron 0: pérdida automática.')
+        setGameOver(true)
+        break
+      }
+
+      // check if zombies eliminated
+      if ((latestZombiesRef.current || 0) <= 0) {
+        pushLog('Zombies eliminados.')
+        break
+      }
+      // else loop for another elimination step
+    }
+
+    // At end of threat phase: detach defenders and mark them tired
+    try {
+      const tbl = latestTableRef.current || []
+      setPlayers(ps => (ps || []).map(p => {
+        // mark defender cards as tired on table
+        (p.defenders || []).forEach(id => {
+          setTable(t => (t || []).map(x => x && x.id === id ? { ...x, isDefender: false, tired: true } : x))
+        })
+        return { ...p, defenders: [] }
+      }))
+    } catch (e) {}
   }
 
   function pasoViaje() {
@@ -360,6 +828,8 @@ export default function GameWindow({ onClose }) {
     // End of day cleanup: reset encounter actions
     setEncounterActionsToday(0)
     // Clear per-day temporary abilities (not modeled in detail here)
+    // Reset talent choices so next day's Preparación will prompt again
+    setTalentChoicesToday({})
   }
 
   // Resolve conflict with a personaje (simplified single-player algorithm)
@@ -370,7 +840,7 @@ export default function GameWindow({ onClose }) {
     let attempts = 0
     while (true) {
       attempts++
-      const r = rollDice()
+      const r = rollDice('conflicto')
       pushLog(`Conflicto: tirada ${r} (meta ${conflictValue})`)
       if (r > conflictValue) {
         // success: return personaje to deck
@@ -454,9 +924,10 @@ export default function GameWindow({ onClose }) {
           const fromTransform = window.getComputedStyle(clone).transform || 'none'
           const anim = clone.animate([
             { transform: fromTransform, opacity: 1 },
-            { transform: `translate3d(${dx * 0.9}px, ${dy * 0.9}px, 0) scale(${scaleX * 1.06}, ${scaleY * 1.06}) rotateZ(-2deg)`, offset: 0.72, opacity: 1 },
+            { transform: `translate3d(${dx * 0.92}px, ${dy * 0.88}px, 0) scale(${scaleX * 1.04}, ${scaleY * 1.04}) rotateZ(-2deg)`, offset: 0.68, opacity: 1 },
+            { transform: `translate3d(${dx}px, ${dy - 6}px, 0) scale(${scaleX * 0.995}, ${scaleY * 0.995}) rotateZ(0deg)`, offset: 0.92, opacity: 1 },
             { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY}) rotateZ(0deg)`, offset: 1, opacity: 1 }
-          ], { duration: 520, easing: 'cubic-bezier(.2,.9,.28,1)', fill: 'forwards' })
+          ], { duration: 520, easing: 'cubic-bezier(.16,.9,.24,1)', fill: 'forwards' })
 
           anim.onfinish = () => {
             try { clone.remove() } catch (er) {}
@@ -477,8 +948,9 @@ export default function GameWindow({ onClose }) {
 
           clone.animate([
             { transform: window.getComputedStyle(clone).transform || 'none', opacity: 1 },
+            { transform: `translate3d(${dx * 0.98}px, ${dy - 6}px, 0) scale(${scale * 1.02})`, opacity: 1, offset: 0.75 },
             { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${scale})`, opacity: 1 }
-          ], { duration: 420, easing: 'cubic-bezier(.22,.9,.3,1)', fill: 'forwards' }).onfinish = () => {
+          ], { duration: 420, easing: 'cubic-bezier(.16,.9,.24,1)', fill: 'forwards' }).onfinish = () => {
             try { clone.remove() } catch (er) {}
             // modal already shown; no need to setPreviewCard again
           }
@@ -624,7 +1096,7 @@ export default function GameWindow({ onClose }) {
         clone.animate([
           { transform: 'rotateY(90deg)' },
           { transform: 'rotateY(0deg)' }
-        ], { duration: 240, easing: 'cubic-bezier(.22,.9,.3,1)' })
+        ], { duration: 300, easing: 'cubic-bezier(.18,.9,.28,1)' })
 
         // after small delay, place the card on the table and remove clone with a pop animation
         setTimeout(() => {
@@ -660,9 +1132,9 @@ export default function GameWindow({ onClose }) {
 
           clone.animate([
             { transform: 'translateY(0px) scale(1)', opacity: 1 },
-            { transform: 'translateY(20px) scale(0.9)', opacity: 0 }
-          ], { duration: 420, easing: 'cubic-bezier(.22,.9,.3,1)' }).onfinish = () => {
-            clone.remove()
+            { transform: 'translateY(12px) scale(0.96)', opacity: 0 }
+          ], { duration: 420, easing: 'cubic-bezier(.2,.9,.28,1)' }).onfinish = () => {
+            try { clone.remove() } catch (er) {}
             // clear showing lock (note: if we deferred, resolution will happen via handlers)
             isShowingRef.current = false
             setIsShowing(false)
@@ -748,6 +1220,9 @@ export default function GameWindow({ onClose }) {
     clone.style.overflow = 'hidden'
     clone.style.boxShadow = '0 24px 60px rgba(2,6,23,0.6)'
     clone.style.willChange = 'transform,opacity'
+    // prevent flicker on some browsers during 3D transforms
+    clone.style.backfaceVisibility = 'hidden'
+    clone.style.transformOrigin = 'center center'
     // allow callers to override or add styles
     Object.assign(clone.style, extraStyles)
     document.body.appendChild(clone)
@@ -912,7 +1387,13 @@ export default function GameWindow({ onClose }) {
     if (c.type === 'personaje') {
       // personaje: puede volverse errante al ser encontrado/jugado
       const becomesErrant = Math.random() < 0.35
-      setTable(t => [...t, { ...c, errant: becomesErrant }])
+      // remove any previous keywords (in case it was allied in hand)
+      try { removeKeywordsForCard(c) } catch (e) {}
+      // set owner to current player (single-player default)
+      const owner = (players && players[0] && players[0].id) || null
+      setTable(t => [...t, { ...c, errant: becomesErrant, owner }])
+      // apply keywords for current mode
+      try { applyKeywordsForCard({ ...c, errant: becomesErrant }, becomesErrant ? 'errant' : 'ally') } catch (e) {}
       pushLog(`Personaje ${becomesErrant ? 'errante' : 'aliado'} en mesa`)
       // recenter view so newly added cards appear centered
       setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
@@ -956,26 +1437,38 @@ export default function GameWindow({ onClose }) {
       clone.style.transform = window.getComputedStyle(srcEl).transform || 'none'
     }
 
-  const dx = destRect.left + destRect.width / 2 - (srcRect.left + srcRect.width / 2)
+    const dx = destRect.left + destRect.width / 2 - (srcRect.left + srcRect.width / 2)
     const dy = destRect.top + destRect.height / 2 - (srcRect.top + srcRect.height / 2)
     const dz = 0
-    const scale = 0.9
+    const baseScale = 0.92
 
     const from = clone.style.transform || 'none'
-    const to = `translate3d(${dx}px, ${dy}px, ${dz}px) scale(${scale})`
+    const toMid = `translate3d(${dx * 0.88}px, ${dy * 0.88}px, ${dz}px) scale(${baseScale * 1.04}) rotateZ(-4deg)`
+    const toFinal = `translate3d(${dx}px, ${dy}px, ${dz}px) scale(${baseScale}) rotateZ(0deg)`
 
     const anim = clone.animate([
-      { transform: from },
-      { transform: to }
-    ], { duration: 600, easing: 'cubic-bezier(.22,.9,.3,1)' })
+      { transform: from, opacity: 1 },
+      { transform: toMid, opacity: 1, offset: 0.7 },
+      { transform: toFinal, opacity: 0.98 }
+    ], { duration: 520, easing: 'cubic-bezier(.18,.9,.28,1)' })
 
     anim.onfinish = () => {
-      clone.remove()
-      cb && cb()
+      // gentle fade & move out to reduce visual popping
+      clone.animate([
+        { transform: toFinal, opacity: 1 },
+        { transform: `translate3d(${dx}px, ${dy + 18}px, 0) scale(${baseScale * 0.96})`, opacity: 0 }
+      ], { duration: 320, easing: 'cubic-bezier(.22,.9,.3,1)', fill: 'forwards' }).onfinish = () => {
+        try { clone.remove() } catch (er) {}
+        cb && cb()
+      }
     }
   }
 
-  function rollDice() { return Math.floor(Math.random() * 6) + 1 }
+  function rollDice(phase) {
+    const r = Math.floor(Math.random() * 6) + 1
+    try { evaluateDiceTriggers(r, phase || '') } catch (e) {}
+    return r
+  }
 
   // Animate a decision roll using a modal die similar to recruit modal.
   // Show the modal for a decision but do NOT start the roll until user clicks the die
@@ -999,7 +1492,7 @@ export default function GameWindow({ onClose }) {
       }, 80)
       setTimeout(() => {
         clearInterval(interval)
-        const final = rollDice()
+          const final = rollDice('decision')
         setDecisionRollResult(final)
         // small delay so user sees final
         setTimeout(() => {
@@ -1135,12 +1628,41 @@ export default function GameWindow({ onClose }) {
       } catch (e) {}
       return
     }
+    // If talent choice modal is open, block advancing until player picks
+    if (talentChoiceCard) {
+      pushLog('Debes elegir la habilidad del Talento antes de avanzar')
+      return
+    }
 
     // No blocking detected — update step and run associated logic
+    // If we're currently in Encuentro and there are remaining encounters,
+    // disallow advancing to the next phase until they are consumed.
+    if (currentStep === 'encuentro') {
+      // recompute remainingEncounters dynamically (count only ADD_ENCOUNTER_ACTION on table)
+      const tblNow = latestTableRef.current || []
+      const addedFromTable = sumEncounterAddsFromTable(tblNow)
+      const base = Number(encountersPerTurn) || 1
+      const effectiveTotal = Math.max(1, Math.min(base + addedFromTable, 3))
+      const remaining = Math.max(0, effectiveTotal - (Number(encounterActionsToday) || 0))
+      if (remaining > 0) {
+        pushLog('Aún quedan encuentros por resolver: pulsa "Encontrar" hasta agotarlos')
+        return
+      }
+    }
+
     setCurrentStep(next)
     try {
       if (next === 'preparacion') pasoPreparacion()
-      else if (next === 'encuentro') await pasoEncuentro()
+      else if (next === 'encuentro') {
+        // entering Encuentro phase: perform the first 'Encontrar' immediately
+        setTimeout(() => { pushLog('Entrando en Paso de Encuentro: se realiza la primera acción de encontrar') }, 10)
+        // attempt the first reveal; nextStep is async so await it
+        try {
+          await findOneEncounter()
+        } catch (e) {
+          console.error('Error performing initial encuentro reveal', e)
+        }
+      }
       else if (next === 'decision') await pasoDecision()
       else if (next === 'riesgo') pasoRiesgo()
       else if (next === 'defensa') pasoDefensa()
@@ -1194,6 +1716,27 @@ export default function GameWindow({ onClose }) {
     closeCardMenu()
   }
 
+  function attachDefender(card) {
+    if (!card || !card.id) return
+    const pid = (players && players[0] && players[0].id) || null
+    if (!pid) return
+    setPlayers(ps => (ps || []).map(p => p.id === pid ? { ...p, defenders: Array.from(new Set([...(p.defenders||[]), card.id])) } : p))
+    // mark card as defender on table
+    setTable(t => (t || []).map(x => x && x.id === card.id ? { ...x, isDefender: true } : x))
+    pushLog(`${card.name || 'Personaje'} anexado como defensor`) 
+    closeCardMenu()
+  }
+
+  function detachDefender(card) {
+    if (!card || !card.id) return
+    const pid = (players && players[0] && players[0].id) || null
+    if (!pid) return
+    setPlayers(ps => (ps || []).map(p => p.id === pid ? { ...p, defenders: (p.defenders||[]).filter(id => id !== card.id) } : p))
+    setTable(t => (t || []).map(x => x && x.id === card.id ? { ...x, isDefender: false, tired: true } : x))
+    pushLog(`${card.name || 'Personaje'} ya no es defensor y quedó cansado`) 
+    closeCardMenu()
+  }
+
   // Handle recruit die roll from the recruit modal
   function handleRecruitRoll() {
     if (!recruitCard || isRolling) return
@@ -1207,14 +1750,16 @@ export default function GameWindow({ onClose }) {
 
     setTimeout(() => {
       clearInterval(interval)
-      const final = rollDice()
+      const final = rollDice('recruit')
       setRollResult(final)
 
       // small delay so the user sees the final number
       setTimeout(() => {
         if (final === 1) {
           // recruited into player's hand (equipo) so it becomes visible in the team bar
-          setHand(h => [...h, recruitCard])
+          const owner = (players && players[0] && players[0].id) || null
+          setHand(h => [...h, { ...recruitCard, owner }])
+          try { applyKeywordsForCard(recruitCard, 'ally') } catch (e) {}
           pushLog('¡Reclutaste al personaje y se unió al equipo!')
         } else if (final === 3) {
           // result 3: returns to encounter deck and its risk is added to zombies
@@ -1223,13 +1768,17 @@ export default function GameWindow({ onClose }) {
           pushLog(`El dado salió 3: el personaje volvió a la baraja y su riesgo (${recruitCard.risk || 0}) se añadió a la amenaza`)
         } else if (final === 4) {
           // result 4: remains errant on the table and adds its risk to zombies
-          setTable(t => [...t, { ...recruitCard, errant: true }])
+          const owner = (players && players[0] && players[0].id) || null
+          setTable(t => [...t, { ...recruitCard, errant: true, owner }])
+          try { applyKeywordsForCard({ ...recruitCard, errant: true }, 'errant') } catch (e) {}
           setZombies(z => z + (recruitCard.risk || 0))
           pushLog(`El dado salió 4: el personaje quedó errante en mesa y su riesgo (${recruitCard.risk || 0}) se añadió a la amenaza`)
         } else {
-          // default: placed on table (not errant)
-          setTable(t => [...t, recruitCard])
-          pushLog(`El dado salió ${final}: el personaje fue colocado en mesa`)
+          // default: placed on table (not errant) -> allied on table
+          const owner = (players && players[0] && players[0].id) || null
+          setTable(t => [...t, { ...recruitCard, errant: false, owner }])
+          try { applyKeywordsForCard({ ...recruitCard, errant: false }, 'ally') } catch (e) {}
+          pushLog(`El dado salió ${final}: el personaje fue colocado en mesa`) 
         }
         // close modal and cleanup
         setIsRolling(false)
@@ -1271,14 +1820,40 @@ export default function GameWindow({ onClose }) {
     }
   }
 
+
+  // Choose a talent option for the current day. We store the selected index in talentChoicesToday
+  function chooseTalentOption(idx) {
+    if (!talentChoiceCard || !talentChoiceCard.id) return
+    setTalentChoicesToday(prev => ({ ...prev, [talentChoiceCard.id]: idx }))
+    pushLog(`Habilidad de talento seleccionada: opción ${idx + 1}`)
+    // Here you could apply immediate effects depending on the chosen ability
+    setTalentChoiceCard(null)
+  }
+
   // compute whether the main advance button should be disabled (reveal in progress, modals open, game over, or pending decisions)
   const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
   const advanceDisabled = Boolean(
     isShowingRef.current || isShowing ||
     eventModalCard || recruitCard ||
+    talentChoiceCard ||
     gameOver ||
     (currentStep === 'decision' && ((decisionRoundParticipants && decisionRoundParticipants.length > 0) || tableHasPendingPersonajes))
   )
+
+  // Compute next-step label so UI shows 'Encontrar' when next step is 'encuentro'
+  const _order = ['preparacion','encuentro','decision','riesgo','defensa','viaje']
+  const _idx = currentStep ? _order.indexOf(currentStep) : -1
+  const _nextIdx = _idx + 1 >= _order.length ? 0 : _idx + 1
+  const _nextStepName = _order[_nextIdx]
+  const nextButtonLabel = _nextStepName === 'encuentro' ? 'Encontrar' : 'Siguiente paso'
+
+  // compute remaining encounter actions available to the player (respect daily cap 3)
+  const dailyCap = 3
+  // Sum ADD_ENCOUNTER_ACTION provided by characters on table
+  const addedFromTableUI = sumEncounterAddsFromTable(table || [])
+  const baseEncounters = Number(encountersPerTurn) || 1
+  const effectiveTotalEncounters = Math.max(1, Math.min(baseEncounters + addedFromTableUI, dailyCap))
+  const remainingEncounters = Math.max(0, effectiveTotalEncounters - (Number(encounterActionsToday) || 0))
 
   return (
     <>
@@ -1327,11 +1902,22 @@ export default function GameWindow({ onClose }) {
           {!currentStep ? (
             <button className="deck-extra-btn" onClick={() => { startGame() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>Iniciar</button>
           ) : (
-            <button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>Siguiente paso</button>
+            // If we're in the Encuentro phase, show a dedicated "Encontrar" button
+            // until all remaining encounters are consumed. Once they are 0, allow
+            // advancing to the next step as normal.
+            currentStep === 'encuentro' ? (
+              ((remainingEncounters || 0) > 0) ? (
+                <button className="deck-extra-btn" onClick={() => { findOneEncounter() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{`Mostrar`}</button>
+              ) : (
+                <button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{nextButtonLabel}</button>
+              )
+            ) : (
+              <button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{nextButtonLabel}</button>
+            )
           )}
           <div style={{ color: '#cfe9f7', fontSize: 12, marginTop: 6 }}>
             <div>Paso: {currentStep || '—'}</div>
-            <div>Viaje: {travelCount} • Cansancio: {fatigueCount} • Encuentros hoy: {encounterActionsToday}</div>
+            <div>Viaje: {travelCount} • Cansancio: {fatigueCount} • Encuentros restantes: {remainingEncounters}</div>
           </div>
         </div>
 
@@ -1479,6 +2065,16 @@ export default function GameWindow({ onClose }) {
           <div style={{ fontWeight: 700, color: '#eaf6f7', marginBottom: 6 }}>Acciones</div>
           <button onClick={() => { closeCardMenu(); playCard(menuCard.index) }}>Jugar carta</button>
           <button onClick={() => { closeCardMenu(); useCardAbility() }}>Usar habilidad</button>
+          {/* allow attaching/detaching defenders for allied personaje owned by current player */}
+          {menuCard && menuCard.card && menuCard.card.type === 'personaje' && !menuCard.card.errant && (menuCard.card.owner === (players && players[0] && players[0].id)) && ((latestTableRef.current||[]).some(x => x && x.id === menuCard.card.id)) && (
+            <> 
+              {((players && players[0] && players[0].defenders) || []).includes(menuCard.card.id) ? (
+                <button onClick={() => { detachDefender(menuCard.card) }}>Quitar defensor</button>
+              ) : (
+                <button onClick={() => { attachDefender(menuCard.card) }}>Anexar como defensor</button>
+              )}
+            </>
+          )}
           <div className="sep" />
           <button onClick={() => { closeCardMenu(); pushLog('Mostrar detalles de la carta') }}>Ver detalles</button>
         </div>
@@ -1594,6 +2190,44 @@ export default function GameWindow({ onClose }) {
               </button>
               <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>
                 Resolviendo decisión para {decisionModalCard.name || 'Personaje'}...
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Talent choice modal: appear during Preparación to pick one of three abilities */}
+      <div className={`card-modal-backdrop ${talentChoiceCard ? 'show' : ''}`} role="dialog" aria-hidden={talentChoiceCard ? 'false' : 'true'} onClick={() => {
+        // prevent closing by clicking outside (must choose one)
+        if (talentChoiceCard) return
+      }}>
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          {talentChoiceCard && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: 'min(640px, 92vw)' }}>
+              <Card name={talentChoiceCard.name} img={talentChoiceCard.img} type={talentChoiceCard.type} risk={talentChoiceCard.risk} conflict={talentChoiceCard.conflict} rot={0} />
+              <div style={{ color: '#e6eef6', fontSize: 14, textAlign: 'center' }}>Elige una de las 3 habilidades del Talento para este día:</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, width: '100%' }}>
+                {(() => {
+                  // derive up to 3 options from the talento card
+                  const opts = []
+                  if (Array.isArray(talentChoiceCard.abilities) && talentChoiceCard.abilities.length) {
+                    opts.push(...talentChoiceCard.abilities.slice(0,3))
+                  } else if (talentChoiceCard.keywords && typeof talentChoiceCard.keywords === 'object') {
+                    // flatten keyword values
+                    const vals = Object.values(talentChoiceCard.keywords).flat().filter(Boolean)
+                    opts.push(...(vals.slice(0,3)))
+                  } else if (talentChoiceCard.oracle) {
+                    if (typeof talentChoiceCard.oracle === 'object') opts.push(...Object.values(talentChoiceCard.oracle).slice(0,3))
+                    else if (typeof talentChoiceCard.oracle === 'string') opts.push(...talentChoiceCard.oracle.split('.').map(s=>s.trim()).filter(Boolean).slice(0,3))
+                  }
+                  // ensure length 3
+                  while (opts.length < 3) opts.push('Habilidad alternativa')
+                  return opts.map((o, i) => {
+                    const label = (typeof o === 'string') ? formatKeywordLabel(o) : o
+                    return (
+                      <button key={i} className="deck-extra-btn" onClick={() => chooseTalentOption(i)} style={{ textAlign: 'left', padding: 12 }}>{label}</button>
+                    )
+                  })
+                })()}
               </div>
             </div>
           )}
