@@ -251,10 +251,24 @@ export default function GameWindow({ onClose }) {
   const [recruitCard, setRecruitCard] = useState(null)
   const [isRolling, setIsRolling] = useState(false)
   const [rollResult, setRollResult] = useState(null)
+  // Conflict modal state for personajes that enter conflicto (5/6 on recruit)
+  const [conflictModalCard, setConflictModalCard] = useState(null)
+  const [isConflictRolling, setIsConflictRolling] = useState(false)
+  const [conflictRollResult, setConflictRollResult] = useState(null)
   // Decision roll modal state (animated die when resolving decisiones)
   const [decisionModalCard, setDecisionModalCard] = useState(null)
   const [isDecisionRolling, setIsDecisionRolling] = useState(false)
   const [decisionRollResult, setDecisionRollResult] = useState(null)
+  // Risk roll modal state (animated die during pasoRiesgo)
+  const [riskModalOpen, setRiskModalOpen] = useState(false)
+  const [isRiskRolling, setIsRiskRolling] = useState(false)
+  const [riskRollResult, setRiskRollResult] = useState(null)
+  const riskResolveRef = useRef(null)
+  // Defense roll modal state (animated die during pasoDefensa)
+  const [defenseModalOpen, setDefenseModalOpen] = useState(false)
+  const [isDefenseRolling, setIsDefenseRolling] = useState(false)
+  const [defenseRollResult, setDefenseRollResult] = useState(null)
+  const defenseResolveRef = useRef(null)
   const [selectedForDecision, setSelectedForDecision] = useState(null)
   const [decisionRoundParticipants, setDecisionRoundParticipants] = useState([])
   const [gameOver, setGameOver] = useState(false)
@@ -370,7 +384,6 @@ export default function GameWindow({ onClose }) {
       }
       case 'CHANGE_RESULT': return 'Cambiar un resultado de decisión'
       case 'ELIM_EQUALS_TIRED': return 'Eliminaciones igualan contadores de cansancio'
-      case 'RECOVER_EXTRA_ALLY': return 'Recuperar un aliado adicional'
       default: {
         const pretty = name.replace(/_/g, ' ').toLowerCase()
         return pretty.charAt(0).toUpperCase() + pretty.slice(1) + (arg ? ` (${arg})` : '')
@@ -509,8 +522,9 @@ export default function GameWindow({ onClose }) {
           } else if (type === 'RISK_MOD') {
             // in riesgo phase, increase zombies by val
             if (phase === 'riesgo') {
-              setZombies(z => z + (val || 0))
-              pushLog(`${c.name || 'Personaje'} (ERRANTE): RISK_MOD activado => +${val || 0} amenaza`)
+              const add = Math.max(0, val || 0)
+              if (add > 0) setZombies(z => z + add)
+              pushLog(`${c.name || 'Personaje'} (ERRANTE): RISK_MOD activado => +${add} amenaza`)
             }
           } else if (type === 'SELF_DISCARD') {
             // discard this character
@@ -678,7 +692,8 @@ export default function GameWindow({ onClose }) {
 
     // determine which personajes must be processed this round
     // Rule: if multiple players, only one errant per player is handled per day (initiative order)
-    const errantChars = (table || []).filter(c => c.type === 'personaje' && c.errant && !c.processedDecision)
+    // consider only personajes that were revealed in a previous day
+    const errantChars = (table || []).filter(c => c.type === 'personaje' && c.errant && !c.processedDecision && (c.revealedDay !== undefined) && (c.revealedDay < (days || 0)))
     let participants = []
     if ((players || []).length > 1 && errantChars.length > 0) {
       // build initiative order (players with hasInitiative first, then others in array order)
@@ -696,125 +711,141 @@ export default function GameWindow({ onClose }) {
       // If still none assigned (no owner matching), fallback to first N errants
       if (participants.length === 0 && errantChars.length > 0) participants = errantChars.slice(0, players.length).map(c => c.id)
     } else {
-      // single-player or no errants: process all personajes needing processing
-      participants = personajes.filter(p => !p.processedDecision).map(p => p.id)
+      // single-player or no errants: process only personajes that were revealed on a previous day
+      participants = personajes.filter(p => (p.revealedDay !== undefined) && (p.revealedDay < (days || 0)) && !p.processedDecision).map(p => p.id)
+    }
+
+    // If there are no participants to process (they were already interacted with),
+    // skip the decision step and advance to Riesgo immediately.
+    if (!participants || participants.length === 0) {
+      pushLog('Paso de Decisión: no hay personajes pendientes de interacción — avanzando al siguiente paso')
+      // advance to riesgo directly
+      try { pasoRiesgo() } catch (e) { console.error('Error avanzando automáticamente a Riesgo', e) }
+      return
     }
 
     // mark selected participants as awaiting decision (visual red border)
     setTable(t => (t || []).map(c => (c.type === 'personaje' && participants.includes(c.id)) ? { ...c, awaitingDecision: true, interactedThisRound: false, inConflict: false } : c))
     setDecisionRoundParticipants(participants)
-    pushLog('Paso de Decisión: los personajes seleccionados esperan resolución. Haz click en un personaje y pulsa "Conflicto"')
+    pushLog('Paso de Decisión: los personajes seleccionados esperan resolución. Haz click en un personaje y pulsa "Decisión"')
   }
 
-  function pasoRiesgo() {
+  async function pasoRiesgo() {
     setCurrentStep('riesgo')
-    const die = rollDice('riesgo')
-    // sum allied personajes risk (table items allied = !errant)
-    const allied = table.filter(c => c.type === 'personaje' && !c.errant)
-    const alliedRisk = allied.reduce((s, x) => s + getEffectiveRisk(x), 0)
-    const delta = die + alliedRisk
-    setZombies(z => z + delta)
-    // mark which allied characters contributed this risk step (for rule interactions later)
+    // Sum only positive threat values from allied characters in the TEAM (hand), not on the table
+    const teamAllies = (hand || []).filter(c => c && c.type === 'personaje')
+    const alliedRisk = teamAllies.reduce((s, x) => s + Math.max(0, Number(x.risk) || 0), 0)
+    // mark which hand characters contributed this risk step (for UI/feedback)
     try {
-      const contributedIds = new Set((allied || []).map(a => a.id))
-      setTable(t => (t || []).map(x => ({ ...x, contributedThisRiesgo: (x && x.id) ? contributedIds.has(x.id) : false })))
+      const contributedIds = new Set((teamAllies || []).filter(a => (Number(a.risk) || 0) > 0).map(a => a.id))
+      setHand(h => (h || []).map(x => ({ ...x, contributedThisRiesgo: (x && x.id) ? contributedIds.has(x.id) : false })))
     } catch (e) {}
-    pushLog(`Paso de Riesgo: dado ${die} + riesgo aliado ${alliedRisk} => +${delta} amenaza`) 
+
+    // Show risk modal and wait for the user to click the die to start the roll
+    setRiskRollResult(null)
+    setIsRiskRolling(false)
+    setRiskModalOpen(true)
+    // wait for startRiskRoll to resolve via riskResolveRef
+    const die = await new Promise((resolve) => { riskResolveRef.current = resolve })
+    const delta = (Number(die) || 0) + alliedRisk
+    setZombies(z => z + delta)
+    pushLog(`Paso de Riesgo: dado ${die} + riesgo equipo ${alliedRisk} => +${delta} amenaza`)
+  }
+
+  // When encounters are finished for the turn, re-open the reveal modal for any
+  // personajes that were revealed on a previous day so the player can resolve them
+  // again. This runs during the end of the Encuentro phase before advancing.
+  async function processPreviousDayReveals() {
+    try {
+      const tbl = latestTableRef.current || []
+      // select personajes that were revealed on a prior day and not yet reprocessed
+      const pending = (tbl || []).filter(c => c && c.type === 'personaje' && (c.revealedDay !== undefined) && (c.revealedDay < (days || 0)) && !c.reprocessedForEncounter)
+      if (!pending || pending.length === 0) return
+      pushLog(`Procesando ${pending.length} personaje(s) del turno anterior...`)
+      for (const card of pending) {
+        // mark as being processed so we don't re-open repeatedly
+        setTable(t => (t || []).map(x => x && x.id === card.id ? { ...x, reprocessedForEncounter: true } : x))
+        // if it's an evento, show event modal
+        if (card.type === 'evento') {
+          setEventModalCard(card)
+          // wait until the user acknowledges (handleEventContinue will resolve showCardResolveRef if set)
+          await new Promise((res) => { showCardResolveRef.current = res })
+        } else if (card.type === 'personaje') {
+          // show recruit modal for this personaje and wait for resolution
+          setRecruitCard(card)
+          await new Promise((res) => { showCardResolveRef.current = res })
+        }
+        // small pause to allow UI to breathe between modals
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise(r => setTimeout(r, 120))
+      }
+      pushLog('Procesamiento de personajes del día anterior completado')
+    } catch (e) {
+      console.error('Error processing previous-day reveals', e)
+    }
   }
 
   async function pasoDefensa() {
     setCurrentStep('defensa')
-    // Multi-player aware multi-step elimination loop.
-    // Players roll in order; defenders provide +1 elimination each; additional rounds reduce rolls by fatigueCount.
-    let round = 0
-    // ensure we capture current players order (initiative first)
-    const iniIndex = (players || []).findIndex(p => p.hasInitiative)
-    const order = []
-    for (let i = 0; i < (players || []).length; i++) order.push(players[(iniIndex + i) % players.length])
+    // Interactive defense: user clicks the die once per call; subtract (roll - fatigue) from zombies.
+    try {
+      // if no zombies, nothing to do
+      if (!latestZombiesRef.current || latestZombiesRef.current <= 0) {
+        pushLog('Paso de Defensa: no hay zombies que eliminar')
+        return
+      }
 
-    while (true) {
-      round++
-      let allZero = true
-      // each player gets to roll unless zombies already 0
-      for (const player of order) {
-        const currentZ = latestZombiesRef.current || 0
-        if (currentZ <= 0) {
-          // player doesn't roll and gains an extra encounter action next day
-          setPlayers(ps => (ps || []).map(p => p.id === player.id ? { ...p, actionsNextDay: (p.actionsNextDay || 0) + 1 } : p))
-          pushLog(`${player.name || 'Jugador'} no necesitó tirar: recibe 1 acción de encuentro adicional mañana`)
-          continue
-        }
+      // open modal and wait for the user to click the die (startDefenseRoll will resolve defenseResolveRef)
+      setDefenseRollResult(null)
+      setIsDefenseRolling(false)
+      setDefenseModalOpen(true)
+      const roll = await new Promise((resolve) => { defenseResolveRef.current = resolve })
+      const r = Number(roll) || 0
+      // Defense roll: subtract fatigue counters from the roll result.
+      // Effective eliminations = max(0, roll - fatigue)
+      const effective = Math.max(0, r - (Number(fatigueCount) || 0))
+      // Compute next zombies count synchronously from latest ref to avoid race
+      const prevZ = Number(latestZombiesRef.current || 0)
+      const nextZ = Math.max(0, prevZ - effective)
+      // update state and ref
+      setZombies(() => {
+        latestZombiesRef.current = nextZ
+        return nextZ
+      })
+      pushLog(`Defensa: tirada ${r} - cansancio ${fatigueCount} => ${effective} => -${effective} zombies`)
 
-        const roll = rollDice('defensa')
-        const adjusted = round > 1 ? Math.max(0, roll - (fatigueCount || 0)) : roll
-        // defenders count
-        const defendersCount = (player.defenders || []).length || 0
-        // sum ELIM_MOD from this player's allied characters on table
-        let elimModSum = 0
-        try {
-          const tbl = latestTableRef.current || []
-          for (const c of tbl) {
-            if (!c || !c.id) continue
-            if (c.owner !== player.id) continue
-            const mods = keywordModifiers[c.id]
-            if (!mods) continue
-            elimModSum += mods.elimMod || 0
-            if (mods.elimEqualsTired) elimModSum += (fatigueCount || 0)
+      // if zombies remain after this single roll, give +1 fatigue and leave the step active
+      if (nextZ > 0) {
+        setFatigueCount(f => {
+          const next = f + 1
+          pushLog(`Quedan zombies: +1 cansancio (total ${next})`)
+          if (next >= 6) {
+            pushLog('Has alcanzado 6 de cansancio: has perdido.')
+            setGameOver(true)
           }
-        } catch (e) {}
-
-        const elimination = Math.max(0, adjusted + defendersCount + (elimModSum || 0))
-        if (elimination > 0) allZero = false
-        // apply elimination
-        setZombies(z => {
-          const next = Math.max(0, z - elimination)
-          latestZombiesRef.current = next
           return next
         })
-        pushLog(`${player.name || 'Jugador'}: tirada ${roll} => ${adjusted} + defensores ${defendersCount} + mods ${elimModSum} => -${elimination} zombies`)
-
-        // small pause to allow UI to update between rolls
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise(r => setTimeout(r, 60))
-      }
-
-      // after each full round, increase fatigue for all players
-      setFatigueCount(f => {
-        const next = f + 1
-        pushLog(`Fin de paso de eliminación: +1 cansancio (total ${next})`)
-        if (next >= 6) {
-          pushLog('Has alcanzado 6 de cansancio: has perdido.')
-          setGameOver(true)
-        }
-        return next
-      })
-
-      // check lose condition: all players rolled 0 (after modifiers) in this round
-      if (allZero) {
-        pushLog('Todos los resultados fueron 0: pérdida automática.')
-        setGameOver(true)
-        break
-      }
-
-      // check if zombies eliminated
-      if ((latestZombiesRef.current || 0) <= 0) {
+      } else {
+        // No zombies remain after this roll: do NOT add fatigue
         pushLog('Zombies eliminados.')
-        break
       }
-      // else loop for another elimination step
+    } catch (e) {
+      console.error('Error during pasoDefensa', e)
+    } finally {
+      setDefenseModalOpen(false)
+      setIsDefenseRolling(false)
+      setDefenseRollResult(null)
+      // After threat phase: detach defenders and mark them tired (preserve existing behavior)
+      try {
+        const tbl = latestTableRef.current || []
+        setPlayers(ps => (ps || []).map(p => {
+          (p.defenders || []).forEach(id => {
+            setTable(t => (t || []).map(x => x && x.id === id ? { ...x, isDefender: false, tired: true } : x))
+          })
+          return { ...p, defenders: [] }
+        }))
+      } catch (e) {}
     }
-
-    // At end of threat phase: detach defenders and mark them tired
-    try {
-      const tbl = latestTableRef.current || []
-      setPlayers(ps => (ps || []).map(p => {
-        // mark defender cards as tired on table
-        (p.defenders || []).forEach(id => {
-          setTable(t => (t || []).map(x => x && x.id === id ? { ...x, isDefender: false, tired: true } : x))
-        })
-        return { ...p, defenders: [] }
-      }))
-    } catch (e) {}
   }
 
   function pasoViaje() {
@@ -1112,7 +1143,7 @@ export default function GameWindow({ onClose }) {
               // Defer resolution until user completes the recruit roll
               showCardResolveRef.current = resolve
             } else {
-              setTable(t => [...t, topRef.current])
+              setTable(t => [...t, { ...topRef.current, revealedDay: days }])
               pushLog('Mostraste una carta y la colocaste en mesa')
               // animate a movement from deck -> table using the existing helper
               try {
@@ -1391,7 +1422,7 @@ export default function GameWindow({ onClose }) {
       try { removeKeywordsForCard(c) } catch (e) {}
       // set owner to current player (single-player default)
       const owner = (players && players[0] && players[0].id) || null
-      setTable(t => [...t, { ...c, errant: becomesErrant, owner }])
+      setTable(t => [...t, { ...c, errant: becomesErrant, owner, revealedDay: days }])
       // apply keywords for current mode
       try { applyKeywordsForCard({ ...c, errant: becomesErrant }, becomesErrant ? 'errant' : 'ally') } catch (e) {}
       pushLog(`Personaje ${becomesErrant ? 'errante' : 'aliado'} en mesa`)
@@ -1411,7 +1442,7 @@ export default function GameWindow({ onClose }) {
       pushLog('Talento asignado')
       setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
     } else {
-      setTable(t => [...t, c])
+      setTable(t => [...t, { ...c, revealedDay: days }])
       pushLog('Carta jugada en mesa')
       setTimeout(() => { setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 } }, 40)
     }
@@ -1506,6 +1537,118 @@ export default function GameWindow({ onClose }) {
     })
   }
 
+  // Handle a single click roll inside the conflict modal. The modal stays
+  // open until the conflict is resolved (roll >= conflict), otherwise
+  // adds zombies equal to (conflict - roll) and the user must roll again.
+  async function handleConflictRoll() {
+    if (!conflictModalCard || isConflictRolling) return
+    setIsConflictRolling(true)
+    setConflictRollResult(null)
+    const interval = setInterval(() => {
+      setConflictRollResult(Math.floor(Math.random() * 6) + 1)
+    }, 80)
+    await new Promise(r => setTimeout(r, 720))
+    clearInterval(interval)
+    const final = rollDice('conflicto')
+    setConflictRollResult(final)
+    // show final briefly
+    await new Promise(r => setTimeout(r, 420))
+
+    try {
+      const card = conflictModalCard
+      const conflictVal = Number(card.conflict) || 0
+      if (final > conflictVal) {
+        // discard the character
+        addToDiscard(card)
+        pushLog(`${card.name || 'Personaje'}: tirada ${final} > ${conflictVal} — descartado en conflicto`)
+        setConflictModalCard(null)
+        // resolve the waiting showCard() if any
+        try { if (showCardResolveRef.current) { showCardResolveRef.current(); showCardResolveRef.current = null } } catch (e) {}
+      } else if (final === conflictVal) {
+        // stays on table (not errant) and its positive risk is added to zombies
+        const owner = (players && players[0] && players[0].id) || null
+        setTable(t => [...t, { ...card, errant: false, owner, revealedDay: days }])
+        try { applyKeywordsForCard({ ...card, errant: false }, 'ally') } catch (e) {}
+        const addRisk = Math.max(0, Number(card.risk) || 0)
+        if (addRisk > 0) setZombies(z => z + addRisk)
+        pushLog(`${card.name || 'Personaje'}: tirada ${final} = ${conflictVal} — queda en mesa; +${addRisk} amenaza`) 
+        setConflictModalCard(null)
+        try { if (showCardResolveRef.current) { showCardResolveRef.current(); showCardResolveRef.current = null } } catch (e) {}
+      } else {
+        // final < conflict: add (conflict - final) zombies and keep modal open
+        const add = (conflictVal - final)
+        setZombies(z => z + add)
+        pushLog(`${card.name || 'Personaje'}: tirada ${final} < ${conflictVal} => +${add} amenaza. Vuelve a tirar.`)
+        // leave conflictModalCard unchanged so user can roll again
+      }
+    } catch (e) {
+      console.error('Error resolving conflict roll', e)
+    }
+
+    setIsConflictRolling(false)
+    setConflictRollResult(null)
+  }
+
+  // Start the animated die roll for the Risk step (user-triggered)
+  function startRiskRoll() {
+    return new Promise((resolve) => {
+      setIsRiskRolling(true)
+      setRiskRollResult(null)
+      const interval = setInterval(() => {
+        setRiskRollResult(Math.floor(Math.random() * 6) + 1)
+      }, 80)
+      setTimeout(() => {
+        clearInterval(interval)
+        const final = rollDice('riesgo')
+        setRiskRollResult(final)
+        // small delay so user sees final
+        setTimeout(() => {
+          setIsRiskRolling(false)
+          setRiskModalOpen(false)
+          setRiskRollResult(null)
+          // If someone is awaiting the risk result (pasoRiesgo), resolve it
+          try {
+            if (riskResolveRef && riskResolveRef.current) {
+              riskResolveRef.current(final)
+              riskResolveRef.current = null
+            }
+          } catch (e) {}
+          resolve(final)
+        }, 420)
+      }, 720)
+    })
+  }
+
+  // Start the animated die roll for the Defense step (user-triggered)
+  function startDefenseRoll() {
+    return new Promise((resolve) => {
+      setIsDefenseRolling(true)
+      setDefenseRollResult(null)
+      const interval = setInterval(() => {
+        setDefenseRollResult(Math.floor(Math.random() * 6) + 1)
+      }, 80)
+      setTimeout(() => {
+        clearInterval(interval)
+        const final = rollDice('defensa')
+        setDefenseRollResult(final)
+        // small delay so user sees final
+        setTimeout(() => {
+          setIsDefenseRolling(false)
+          setDefenseModalOpen(false)
+          // If someone is awaiting the defense result (pasoDefensa), resolve it
+          try {
+            if (defenseResolveRef && defenseResolveRef.current) {
+              defenseResolveRef.current(final)
+              defenseResolveRef.current = null
+            }
+          } catch (e) {}
+          setDefenseRollResult(null)
+          resolve(final)
+        }, 420)
+      }, 720)
+    })
+  }
+
   // Apply the decision result to the given card
   function resolveDecisionForCard(card, raw) {
     if (!card) return
@@ -1520,12 +1663,14 @@ export default function GameWindow({ onClose }) {
       addToDiscard(card)
       pushLog(`${card.name || 'Personaje'}: resultado mayor — descartado`)
     } else if (adjusted === conflictVal) {
-      setZombies(z => z + riskVal)
+      const addRisk = Math.max(0, riskVal || 0)
+      if (addRisk > 0) setZombies(z => z + addRisk)
       // mark as processed and not in conflict
       setTable(t => t.map(x => x === card ? { ...x, processedDecision: true, awaitingDecision: false, inConflict: false, interactedThisRound: true } : x))
       pushLog(`${card.name || 'Personaje'}: resultado igual — permanece en mesa y se suma su amenaza (${riskVal}) a la amenaza total`)
     } else {
-      setZombies(z => z + riskVal)
+      const addRisk = Math.max(0, riskVal || 0)
+      if (addRisk > 0) setZombies(z => z + addRisk)
       // mark as still in conflict; it will be revisited in next round
       setTable(t => t.map(x => x === card ? { ...x, processedDecision: false, awaitingDecision: false, inConflict: true, interactedThisRound: true } : x))
       pushLog(`${card.name || 'Personaje'}: resultado menor — se suma su amenaza (${riskVal}) y queda en conflicto (se volverá a intentar).`)
@@ -1609,6 +1754,13 @@ export default function GameWindow({ onClose }) {
       pushLog('Juego terminado. No puedes avanzar más pasos.')
       return
     }
+    // If we're currently in Defensa and there are zombies remaining, block advancing
+    try {
+      if (currentStep === 'defensa' && (latestZombiesRef.current || 0) > 0) {
+        pushLog('No puedes avanzar: quedan zombies por eliminar en Defensa')
+        return
+      }
+    } catch (e) {}
     const order = ['preparacion','encuentro','decision','riesgo','defensa','viaje']
     const idx = currentStep ? order.indexOf(currentStep) : -1
     let nextIdx = idx + 1
@@ -1617,7 +1769,8 @@ export default function GameWindow({ onClose }) {
     // If currently in decision phase, prevent leaving it while any personajes are still
     // pending resolution: either the decision round participants list is non-empty,
     // or any personaje on the table is awaitingDecision, inConflict, or not yet processed.
-    const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
+    // consider only personajes that came from a previous day
+    const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (c.revealedDay !== undefined) && (c.revealedDay < (days || 0)) && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
     const hasPending = (decisionRoundParticipants && decisionRoundParticipants.length > 0) || tableHasPendingPersonajes
     if (currentStep === 'decision' && hasPending) {
       pushLog('Hay conflictos pendientes: resuélvelos antes de avanzar de Decisión')
@@ -1647,6 +1800,13 @@ export default function GameWindow({ onClose }) {
       if (remaining > 0) {
         pushLog('Aún quedan encuentros por resolver: pulsa "Encontrar" hasta agotarlos')
         return
+      }
+      // If we've exhausted encounters, process any personajes that were revealed
+      // on a previous day before leaving the Encuentro phase.
+      try {
+        await processPreviousDayReveals()
+      } catch (e) {
+        console.error('Error processing previous-day reveals before leaving Encuentro', e)
       }
     }
 
@@ -1755,6 +1915,7 @@ export default function GameWindow({ onClose }) {
 
       // small delay so the user sees the final number
       setTimeout(() => {
+        let openedConflict = false
         if (final === 1) {
           // recruited into player's hand (equipo) so it becomes visible in the team bar
           const owner = (players && players[0] && players[0].id) || null
@@ -1764,19 +1925,25 @@ export default function GameWindow({ onClose }) {
         } else if (final === 3) {
           // result 3: returns to encounter deck and its risk is added to zombies
           setDeck(d => [recruitCard, ...d])
-          setZombies(z => z + (recruitCard.risk || 0))
+          setZombies(z => z + Math.max(0, recruitCard.risk || 0))
           pushLog(`El dado salió 3: el personaje volvió a la baraja y su riesgo (${recruitCard.risk || 0}) se añadió a la amenaza`)
         } else if (final === 4) {
           // result 4: remains errant on the table and adds its risk to zombies
           const owner = (players && players[0] && players[0].id) || null
-          setTable(t => [...t, { ...recruitCard, errant: true, owner }])
+          setTable(t => [...t, { ...recruitCard, errant: true, owner, revealedDay: days }])
           try { applyKeywordsForCard({ ...recruitCard, errant: true }, 'errant') } catch (e) {}
-          setZombies(z => z + (recruitCard.risk || 0))
+          setZombies(z => z + Math.max(0, recruitCard.risk || 0))
           pushLog(`El dado salió 4: el personaje quedó errante en mesa y su riesgo (${recruitCard.risk || 0}) se añadió a la amenaza`)
+        } else if (final === 5 || final === 6) {
+          // Enter conflict: open conflict modal and let user resolve
+          setConflictModalCard(recruitCard)
+          pushLog(`El dado salió ${final}: ${recruitCard.name || 'Personaje'} entra en conflicto`) 
+          // do not resolve the showCard here; resolution happens when conflict modal closes
+          openedConflict = true
         } else {
           // default: placed on table (not errant) -> allied on table
           const owner = (players && players[0] && players[0].id) || null
-          setTable(t => [...t, { ...recruitCard, errant: false, owner }])
+          setTable(t => [...t, { ...recruitCard, errant: false, owner, revealedDay: days }])
           try { applyKeywordsForCard({ ...recruitCard, errant: false }, 'ally') } catch (e) {}
           pushLog(`El dado salió ${final}: el personaje fue colocado en mesa`) 
         }
@@ -1790,9 +1957,11 @@ export default function GameWindow({ onClose }) {
         topRef.current = null
         // If showCard() was awaiting this recruit modal, resolve it so pasoEncuentro can continue
         try {
-          if (showCardResolveRef.current) {
-            showCardResolveRef.current()
-            showCardResolveRef.current = null
+          if (!openedConflict) {
+            if (showCardResolveRef.current) {
+              showCardResolveRef.current()
+              showCardResolveRef.current = null
+            }
           }
         } catch (e) {}
       }, 380)
@@ -1831,12 +2000,16 @@ export default function GameWindow({ onClose }) {
   }
 
   // compute whether the main advance button should be disabled (reveal in progress, modals open, game over, or pending decisions)
-  const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
+  // consider only personajes that were revealed on a previous day when disabling advance
+  const tableHasPendingPersonajes = (table && table.some && table.some(c => c && c.type === 'personaje' && (c.revealedDay !== undefined) && (c.revealedDay < (days || 0)) && (!c.processedDecision || c.awaitingDecision || c.inConflict)))
   const advanceDisabled = Boolean(
     isShowingRef.current || isShowing ||
     eventModalCard || recruitCard ||
     talentChoiceCard ||
     gameOver ||
+    riskModalOpen || isRiskRolling ||
+    conflictModalCard || isConflictRolling ||
+    defenseModalOpen || isDefenseRolling ||
     (currentStep === 'decision' && ((decisionRoundParticipants && decisionRoundParticipants.length > 0) || tableHasPendingPersonajes))
   )
 
@@ -1902,18 +2075,30 @@ export default function GameWindow({ onClose }) {
           {!currentStep ? (
             <button className="deck-extra-btn" onClick={() => { startGame() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>Iniciar</button>
           ) : (
-            // If we're in the Encuentro phase, show a dedicated "Encontrar" button
-            // until all remaining encounters are consumed. Once they are 0, allow
-            // advancing to the next step as normal.
-            currentStep === 'encuentro' ? (
-              ((remainingEncounters || 0) > 0) ? (
-                <button className="deck-extra-btn" onClick={() => { findOneEncounter() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{`Mostrar`}</button>
-              ) : (
-                <button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{nextButtonLabel}</button>
-              )
-            ) : (
-              <button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{nextButtonLabel}</button>
-            )
+            // Show contextual action depending on current step
+            (function() {
+              if (currentStep === 'encuentro') {
+                // If we're in Encuentro and there are remaining encounters, show Mostrar
+                if ((remainingEncounters || 0) > 0) {
+                  return (<button className="deck-extra-btn" onClick={() => { findOneEncounter() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{`Mostrar`}</button>)
+                }
+                // otherwise fallthrough to default next-step button
+              }
+
+              if (currentStep === 'defensa') {
+                // When in Defensa, if there are zombies remaining offer to 'Defender'
+                // which re-opens the defense modal. If none remain, allow advancing.
+                const zombiesRemaining = Number(latestZombiesRef.current || 0)
+                if (zombiesRemaining > 0) {
+                  return (<button className="deck-extra-btn" onClick={() => { pasoDefensa() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>Defender</button>)
+                }
+                // no zombies -> allow advancing as usual
+                return (<button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{nextButtonLabel}</button>)
+              }
+
+              // Default: show next step button
+              return (<button className="deck-extra-btn" onClick={() => { nextStep() }} disabled={advanceDisabled} aria-busy={advanceDisabled ? 'true' : 'false'}>{nextButtonLabel}</button>)
+            })()
           )}
           <div style={{ color: '#cfe9f7', fontSize: 12, marginTop: 6 }}>
             <div>Paso: {currentStep || '—'}</div>
@@ -1944,7 +2129,7 @@ export default function GameWindow({ onClose }) {
                         {/* Decision overlay: show 'Conflicto' button when this card is selected during decision step */}
                         {isAwaiting && isSelected && (
                           <div className="decision-overlay" onClick={(ev) => { ev.stopPropagation() }}>
-                            <button className="deck-extra-btn" onClick={() => { showDecisionModal(c) }}>Conflicto</button>
+                            <button className="deck-extra-btn" onClick={() => { showDecisionModal(c) }}>Decisión</button>
                             <button className="deck-extra-btn" style={{ marginLeft: 8 }} onClick={() => { setSelectedForDecision(null) }}>Cancelar</button>
                           </div>
                         )}
@@ -2191,6 +2376,64 @@ export default function GameWindow({ onClose }) {
               <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>
                 Resolviendo decisión para {decisionModalCard.name || 'Personaje'}...
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Conflict modal: used when a revealed personaje enters conflicto (5/6 on recruit) */}
+      <div className={`card-modal-backdrop ${conflictModalCard ? 'show' : ''}`} role="dialog" aria-hidden={conflictModalCard ? 'false' : 'true'} onClick={(e) => {
+        // Prevent closing conflict modal by clicking outside; player must resolve via the die
+        return
+      }}>
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          {conflictModalCard && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <Card name={conflictModalCard.name} img={conflictModalCard.img} type={conflictModalCard.type} risk={conflictModalCard.risk} conflict={conflictModalCard.conflict} rot={0} />
+              <div style={{ color: '#e6eef6', fontSize: 14, textAlign: 'center' }}>Conflicto: pulsa el dado hasta que el resultado sea igual o mayor que el conflicto ({conflictModalCard && conflictModalCard.conflict})</div>
+              <button className={`recruit-die`} aria-label="Tirada de conflicto" disabled={isConflictRolling} onClick={async () => { if (isConflictRolling) return; await handleConflictRoll() }}>
+                {isConflictRolling ? (conflictRollResult || '...') : '🎲'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Defense roll modal (interactive die during pasoDefensa) */}
+      <div className={`card-modal-backdrop ${defenseModalOpen ? 'show' : ''}`} role="dialog" aria-hidden={defenseModalOpen ? 'false' : 'true'} onClick={(e) => {
+        if (isDefenseRolling) return
+        setDefenseModalOpen(false)
+      }}>
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          {defenseModalOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <div style={{ color: '#e6eef6', fontSize: 14, textAlign: 'center' }}>Paso de Defensa: haz clic en el dado para tirar</div>
+              <button className={`recruit-die`} aria-label="Tirada de defensa" disabled={isDefenseRolling} onClick={async () => {
+                if (isDefenseRolling) return
+                await startDefenseRoll()
+              }}>
+                {isDefenseRolling ? (defenseRollResult || '...') : '🎲'}
+              </button>
+              <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>La tirada se restará de los zombies restantes.</div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Risk roll modal (animated die used during pasoRiesgo) */}
+      <div className={`card-modal-backdrop ${riskModalOpen ? 'show' : ''}`} role="dialog" aria-hidden={riskModalOpen ? 'false' : 'true'} onClick={(e) => {
+        if (isRiskRolling) return
+        setRiskModalOpen(false)
+      }}>
+        <div className="card-modal-content" onClick={(e) => e.stopPropagation()}>
+          {riskModalOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <div style={{ color: '#e6eef6', fontSize: 14, textAlign: 'center' }}>Paso de Riesgo: haz clic en el dado para tirar</div>
+              <button className={`recruit-die`} aria-label="Tirada de riesgo" disabled={isRiskRolling} onClick={async () => {
+                if (isRiskRolling) return
+                await startRiskRoll()
+                return
+              }}>
+                {isRiskRolling ? (riskRollResult || '...') : '🎲'}
+              </button>
+              <div style={{ color: '#e6eef6', fontSize: 13, textAlign: 'center' }}>La tirada se sumará a las amenazas positivas de tu equipo.</div>
             </div>
           )}
         </div>
